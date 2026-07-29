@@ -1,0 +1,21 @@
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# Local tooling build
+tools/*.exe
+tools/*.obj
+tools/*.pdb
+
+# Logs / temp
+*.log
+*.tmp
+*.tmp.png
+node_modules/

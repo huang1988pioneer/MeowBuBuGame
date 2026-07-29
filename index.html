@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="喵布布的復仇 - 一款像素風動作平台遊戲。喵布布的魚被偷了，展開一連串復仇之旅！">
+    <meta name="keywords" content="喵布布的復仇, MeowBuBu's Revenge, 像素遊戲, 動作平台, HTML5 Game">
+    <title>喵布布的復仇 | MeowBuBu's Revenge</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Press+Start+2P&display=swap" rel="stylesheet">
+
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <!-- Scanline Overlay -->
+        <div class="scanlines"></div>
+
+        <!-- Loading Screen -->
+        <div id="loading-screen" class="active">
+            <div class="loading-cat-icon">🐱</div>
+            <h1 class="loading-title">喵布布的復仇</h1>
+            <h2 class="loading-subtitle">MeowBuBu's Revenge</h2>
+            <div class="loading-bar-container">
+                <div id="loading-bar"></div>
+            </div>
+            <p id="loading-text">Loading Assets... 0%</p>
+        </div>
+
+        <!-- Game Canvas -->
+        <canvas id="game-canvas" width="960" height="540"></canvas>
+
+        <!-- Mobile Touch Controls -->
+        <div id="touch-controls">
+            <div id="dpad">
+                <div class="dpad-btn" id="btn-up" data-dir="up">▲</div>
+                <div class="dpad-row">
+                    <div class="dpad-btn" id="btn-left" data-dir="left">◀</div>
+                    <div class="dpad-btn" id="btn-down" data-dir="down">▼</div>
+                    <div class="dpad-btn" id="btn-right" data-dir="right">▶</div>
+                </div>
+            </div>
+            <div id="action-buttons">
+                <div class="action-btn" id="btn-ult">ULT</div>
+                <div class="action-btn" id="btn-skill">SKILL</div>
+                <div class="action-btn" id="btn-jump">JUMP</div>
+                <div class="action-btn" id="btn-attack">ATK</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Script -->
+    <script src="game.js"></script>
+</body>
+</html>
