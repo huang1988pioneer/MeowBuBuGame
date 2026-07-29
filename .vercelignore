@@ -1,0 +1,7 @@
+# Local tooling (not needed in production)
+tools/
+*.tmp.png
+*.log
+
+# Source reference images (not loaded by the game at runtime)
+assets/source/
