@@ -459,6 +459,12 @@ const Input = {
     codes: {},
     justPressed: {},
     justPressedCode: {},
+    // 實體鍵碼（keyCode）後備 — 中文輸入法常把 e.key 改成 Process／注音
+    _keyCodes: { down: {}, just: {} },
+    // 滑鼠（桌面近戰後備）
+    _mouse: { attack: false, attackHeld: false },
+    // 鍵盤按住連砍冷卻
+    _holdAtkCd: 0,
     _touchState: {
         left: false, right: false, up: false, down: false,
         jump: false, jumpHeld: false,
@@ -475,12 +481,15 @@ const Input = {
     reset() {
         for (let k in this.justPressed) this.justPressed[k] = false;
         for (let k in this.justPressedCode) this.justPressedCode[k] = false;
+        for (let k in this._keyCodes.just) this._keyCodes.just[k] = false;
         this._touchState.anyTap = false;
         this._touchState.attack = false;
         this._touchState.special = false;
         this._touchState.ultimate = false;
         this._touchState.jump = false;
         this._touchState.autoToggle = false;
+        this._mouse.attack = false;
+        if (this._holdAtkCd > 0) this._holdAtkCd--;
         // 按住連發：攻擊／技能
         if (this._touchState.attackHeld) {
             if (this._touchState._atkCd > 0) this._touchState._atkCd--;
@@ -581,30 +590,58 @@ const Input = {
             this.isCodeJustPressed('ArrowUp') || this.isCodeJustPressed('KeyW') || this.isCodeJustPressed('Space') ||
             this._touchState.jump || this._auto.jump;
     },
+    /** 近戰：Z / J / 滑鼠左鍵；以 code/keyCode 為主（中文輸入法常改掉 e.key） */
     wantAttack() {
-        return this.isJustPressed('z') || this.isJustPressed('Z') || this.isJustPressed('j') || this.isJustPressed('J') ||
+        if (this._touchState.attack || this._auto.attack || this._mouse.attack) return true;
+        if (this.isJustPressed('z') || this.isJustPressed('Z') ||
+            this.isJustPressed('j') || this.isJustPressed('J') ||
             this.isCodeJustPressed('KeyZ') || this.isCodeJustPressed('KeyJ') ||
-            this._touchState.attack || this._auto.attack;
+            this.isCodeJustPressed('KeyY') || // QWERTZ 鍵盤 Y 位置
+            this._keyCodes.just[90] || this._keyCodes.just[74]) {
+            return true;
+        }
+        // 按住連砍（justPressed 被輸入法吃掉時仍可打）
+        const held =
+            this.isCodeDown('KeyZ') || this.isCodeDown('KeyJ') || this.isCodeDown('KeyY') ||
+            this.isDown('z') || this.isDown('Z') || this.isDown('j') || this.isDown('J') ||
+            this._keyCodes.down[90] || this._keyCodes.down[74] ||
+            this._mouse.attackHeld;
+        if (held) {
+            if (this._holdAtkCd <= 0) {
+                this._holdAtkCd = 12;
+                return true;
+            }
+        } else {
+            this._holdAtkCd = 0;
+        }
+        return false;
     },
     wantSpecial() {
-        // X / K / C / F — Code 綁定避免中文輸入法吃掉 key
-        return this.isJustPressed('x') || this.isJustPressed('X') ||
+        // X / K / C / F — Code + keyCode 綁定，避免中文輸入法吃掉 key
+        if (this._touchState.special || this._auto.special) return true;
+        if (this.isJustPressed('x') || this.isJustPressed('X') ||
             this.isJustPressed('k') || this.isJustPressed('K') ||
             this.isJustPressed('c') || this.isJustPressed('C') ||
             this.isJustPressed('f') || this.isJustPressed('F') ||
             this.isCodeJustPressed('KeyX') || this.isCodeJustPressed('KeyK') ||
             this.isCodeJustPressed('KeyC') || this.isCodeJustPressed('KeyF') ||
-            this._touchState.special || this._auto.special;
+            this._keyCodes.just[88] || this._keyCodes.just[75] ||
+            this._keyCodes.just[67] || this._keyCodes.just[70]) {
+            return true;
+        }
+        return false;
     },
     wantUltimate() {
-        // V / Q / R / Shift+X / U — 大絕招
+        // V / Q / R / U — 大絕招
+        if (this._touchState.ultimate || this._auto.ultimate) return true;
         return this.isJustPressed('v') || this.isJustPressed('V') ||
             this.isJustPressed('q') || this.isJustPressed('Q') ||
             this.isJustPressed('r') || this.isJustPressed('R') ||
             this.isJustPressed('u') || this.isJustPressed('U') ||
             this.isCodeJustPressed('KeyV') || this.isCodeJustPressed('KeyQ') ||
             this.isCodeJustPressed('KeyR') || this.isCodeJustPressed('KeyU') ||
-            this._touchState.ultimate || this._auto.ultimate;
+            this._keyCodes.just[86] || this._keyCodes.just[81] ||
+            this._keyCodes.just[82] || this._keyCodes.just[85];
     },
     wantStart() {
         return this.isJustPressed('Enter') || this.isCodeJustPressed('Enter') || this._touchState.anyTap;
@@ -886,15 +923,16 @@ const TouchUI = {
     }
 };
 
-// Keyboard — 跨瀏覽器（含 Firefox Space / code）
+// Keyboard — 跨瀏覽器 + 中文輸入法友善（code / keyCode 為主）
 function normalizeKey(e) {
-    // 舊 Edge / 部分 Safari
     if (e.key === 'Spacebar') return ' ';
     if (e.key === 'Esc') return 'Escape';
+    // 輸入法組字中 key 常是 Process / Unidentified，不當成遊戲字元
+    if (e.key === 'Process' || e.key === 'Unidentified') return '';
     return e.key;
 }
 function normalizeCode(e) {
-    if (e.code) return e.code;
+    if (e.code && e.code !== 'Unidentified') return e.code;
     // 極舊瀏覽器用 keyCode 對照
     const map = {
         37: 'ArrowLeft', 38: 'ArrowUp', 39: 'ArrowRight', 40: 'ArrowDown',
@@ -902,48 +940,131 @@ function normalizeCode(e) {
         65: 'KeyA', 68: 'KeyD', 87: 'KeyW', 83: 'KeyS',
         90: 'KeyZ', 74: 'KeyJ', 88: 'KeyX', 67: 'KeyC', 70: 'KeyF',
         86: 'KeyV', 81: 'KeyQ', 82: 'KeyR', 85: 'KeyU',
-        72: 'KeyH', 80: 'KeyP'
+        72: 'KeyH', 80: 'KeyP', 75: 'KeyK', 89: 'KeyY'
     };
     return map[e.keyCode] || map[e.which] || '';
 }
 
+/** 由實體鍵位強制寫入 code（輸入法改 key 時仍可靠） */
+function forceCodeFromKeyCode(kc) {
+    const map = {
+        37: 'ArrowLeft', 38: 'ArrowUp', 39: 'ArrowRight', 40: 'ArrowDown',
+        32: 'Space', 13: 'Enter',
+        65: 'KeyA', 68: 'KeyD', 87: 'KeyW', 83: 'KeyS',
+        90: 'KeyZ', 74: 'KeyJ', 88: 'KeyX', 67: 'KeyC', 70: 'KeyF',
+        86: 'KeyV', 81: 'KeyQ', 82: 'KeyR', 85: 'KeyU',
+        72: 'KeyH', 80: 'KeyP', 75: 'KeyK', 89: 'KeyY',
+        16: 'ShiftLeft'
+    };
+    return map[kc] || '';
+}
+
 Compat.on(window, 'keydown', (e) => {
+    // 忽略長按系統 repeat 造成的「一直 justPressed」；連砍由 hold 計時處理
+    const isRepeat = !!e.repeat;
     const key = normalizeKey(e);
-    const code = normalizeCode(e);
-    if (!Input.keys[key]) Input.justPressed[key] = true;
-    if (code && !Input.codes[code]) Input.justPressedCode[code] = true;
-    Input.keys[key] = true;
+    let code = normalizeCode(e);
+    const kc = e.keyCode || e.which || 0;
+
+    // keyCode 後備：強制對應實體鍵（修中文 IME 下 Z 無效）
+    if (kc) {
+        if (!isRepeat && !Input._keyCodes.down[kc]) Input._keyCodes.just[kc] = true;
+        Input._keyCodes.down[kc] = true;
+        const forced = forceCodeFromKeyCode(kc);
+        if (forced) code = code || forced;
+    }
+
+    if (key && !isRepeat && !Input.keys[key]) Input.justPressed[key] = true;
+    if (code && !isRepeat && !Input.codes[code]) Input.justPressedCode[code] = true;
+    if (key) Input.keys[key] = true;
     if (code) Input.codes[code] = true;
+
     // 空白鍵也標 ' ' 與 Space
-    if (key === ' ' || code === 'Space') {
+    if (key === ' ' || code === 'Space' || kc === 32) {
         Input.keys[' '] = true;
         Input.keys['Space'] = true;
         Input.codes['Space'] = true;
+        if (!isRepeat) {
+            Input.justPressed[' '] = true;
+            Input.justPressedCode['Space'] = true;
+        }
     }
+    // Z 攻擊：無論 IME 是否改 key，確保 KeyZ 被按下
+    if (code === 'KeyZ' || kc === 90) {
+        Input.codes['KeyZ'] = true;
+        if (!isRepeat) Input.justPressedCode['KeyZ'] = true;
+        Input.keys['z'] = true;
+        Input.keys['Z'] = true;
+        if (!isRepeat) {
+            Input.justPressed['z'] = true;
+            Input.justPressed['Z'] = true;
+        }
+    }
+    // J 攻擊後備
+    if (code === 'KeyJ' || kc === 74) {
+        Input.codes['KeyJ'] = true;
+        if (!isRepeat) Input.justPressedCode['KeyJ'] = true;
+    }
+
     try { SFX.init(); } catch (err) {}
-    // 只擋遊戲相關鍵，避免 Firefox 無法用 F5/Ctrl+L 等
+    // 只擋遊戲相關鍵
     const block = (
         key === ' ' || key === 'ArrowUp' || key === 'ArrowDown' ||
         key === 'ArrowLeft' || key === 'ArrowRight' ||
         code === 'Space' || (code && code.indexOf('Arrow') === 0) ||
         code === 'KeyW' || code === 'KeyA' || code === 'KeyS' || code === 'KeyD' ||
-        code === 'KeyZ' || code === 'KeyJ' || code === 'KeyX' || code === 'KeyC' ||
+        code === 'KeyZ' || code === 'KeyJ' || code === 'KeyY' || code === 'KeyX' || code === 'KeyC' ||
         code === 'KeyF' || code === 'KeyV' || code === 'KeyQ' || code === 'KeyR' ||
-        code === 'KeyU' || code === 'KeyH' || code === 'KeyP' || code === 'ShiftLeft' ||
-        code === 'ShiftRight'
+        code === 'KeyU' || code === 'KeyH' || code === 'KeyP' || code === 'KeyK' ||
+        code === 'ShiftLeft' || code === 'ShiftRight' ||
+        kc === 32 || kc === 90 || kc === 74 || kc === 88 || kc === 37 || kc === 38 || kc === 39 || kc === 40
     );
     if (block && e.preventDefault) e.preventDefault();
 });
 Compat.on(window, 'keyup', (e) => {
     const key = normalizeKey(e);
-    const code = normalizeCode(e);
-    Input.keys[key] = false;
+    let code = normalizeCode(e);
+    const kc = e.keyCode || e.which || 0;
+    if (kc) {
+        Input._keyCodes.down[kc] = false;
+        const forced = forceCodeFromKeyCode(kc);
+        if (forced) code = code || forced;
+    }
+    if (key) Input.keys[key] = false;
     if (code) Input.codes[code] = false;
-    if (key === ' ' || code === 'Space') {
+    if (key === ' ' || code === 'Space' || kc === 32) {
         Input.keys[' '] = false;
         Input.keys['Space'] = false;
         Input.codes['Space'] = false;
     }
+    if (code === 'KeyZ' || kc === 90) {
+        Input.codes['KeyZ'] = false;
+        Input.keys['z'] = false;
+        Input.keys['Z'] = false;
+    }
+    if (code === 'KeyJ' || kc === 74) {
+        Input.codes['KeyJ'] = false;
+    }
+});
+
+// 滑鼠左鍵 = 近戰（桌面後備，避開虛擬鍵）
+Compat.on(window, 'mousedown', (e) => {
+    if (e.button !== 0) return;
+    if (domClosest(e.target, '.dpad-btn, .action-btn, .util-btn, #dpad, #action-buttons, #btn-auto')) return;
+    // 僅在遊戲進行中當攻擊；選單仍用 click → anyTap
+    Input._mouse.attack = true;
+    Input._mouse.attackHeld = true;
+    try { SFX.init(); } catch (err) {}
+});
+Compat.on(window, 'mouseup', (e) => {
+    if (e.button !== 0) return;
+    Input._mouse.attackHeld = false;
+});
+Compat.on(window, 'blur', () => {
+    Input._mouse.attackHeld = false;
+    Input.codes = {};
+    Input.keys = {};
+    Input._keyCodes.down = {};
 });
 
 // TouchUI / Layout 延後到 AutoPlay 宣告後再 init（避免 const TDZ）
