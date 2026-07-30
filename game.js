@@ -209,6 +209,8 @@ const Input = {
     justPressed: {},
     justPressedCode: {},
     _touchState: { left: false, right: false, up: false, down: false, jump: false, attack: false, special: false, ultimate: false, anyTap: false },
+    // 自動掛機注入的虛擬輸入（每幀由 AutoPlay 寫入，玩家手動優先）
+    _auto: { axisX: 0, axisY: 0, jump: false, jumpHeld: false, attack: false, special: false, ultimate: false, run: false },
 
     reset() {
         for (let k in this.justPressed) this.justPressed[k] = false;
@@ -219,6 +221,18 @@ const Input = {
         this._touchState.ultimate = false;
         this._touchState.jump = false;
         // up/down held state cleared only on touchend of those buttons
+        // _auto 由 AutoPlay 每幀重設，此處不清除 jumpHeld（同一幀內 player 還要用）
+    },
+
+    clearAuto() {
+        this._auto.axisX = 0;
+        this._auto.axisY = 0;
+        this._auto.jump = false;
+        this._auto.jumpHeld = false;
+        this._auto.attack = false;
+        this._auto.special = false;
+        this._auto.ultimate = false;
+        this._auto.run = false;
     },
 
     isDown(key)        { return !!this.keys[key]; },
@@ -232,6 +246,8 @@ const Input = {
         if (this.isDown('ArrowRight') || this.isDown('d') || this.isDown('D') || this.isCodeDown('ArrowRight') || this.isCodeDown('KeyD')) x += 1;
         if (this._touchState.left) x = -1;
         if (this._touchState.right) x = 1;
+        // 玩家手動優先；無手動時才吃掛機軸
+        if (x === 0 && this._auto.axisX) x = this._auto.axisX;
         return x;
     },
 
@@ -242,6 +258,7 @@ const Input = {
         if (this.isDown('ArrowDown') || this.isDown('s') || this.isDown('S') || this.isCodeDown('ArrowDown') || this.isCodeDown('KeyS')) y += 1;
         if (this._touchState.up) y = -1;
         if (this._touchState.down) y = 1;
+        if (y === 0 && this._auto.axisY) y = this._auto.axisY;
         return y;
     },
 
@@ -264,16 +281,27 @@ const Input = {
         return { x: x / len, y: y / len };
     },
 
+    isHoldingJump() {
+        return this.isDown('ArrowUp') || this.isDown('w') || this.isDown('W') ||
+            this.isDown(' ') || this.isDown('Space') ||
+            this.isCodeDown('ArrowUp') || this.isCodeDown('KeyW') || this.isCodeDown('Space') ||
+            this._touchState.up || this._auto.jumpHeld;
+    },
+
+    isRunning() {
+        return this.isDown('Shift') || this.isCodeDown('ShiftLeft') || this.isCodeDown('ShiftRight') || this._auto.run;
+    },
+
     wantJump() {
         return this.isJustPressed('ArrowUp') || this.isJustPressed('w') || this.isJustPressed('W') ||
             this.isJustPressed(' ') || this.isJustPressed('Space') ||
             this.isCodeJustPressed('ArrowUp') || this.isCodeJustPressed('KeyW') || this.isCodeJustPressed('Space') ||
-            this._touchState.jump;
+            this._touchState.jump || this._auto.jump;
     },
     wantAttack() {
         return this.isJustPressed('z') || this.isJustPressed('Z') || this.isJustPressed('j') || this.isJustPressed('J') ||
             this.isCodeJustPressed('KeyZ') || this.isCodeJustPressed('KeyJ') ||
-            this._touchState.attack;
+            this._touchState.attack || this._auto.attack;
     },
     wantSpecial() {
         // X / K / C / F — Code 綁定避免中文輸入法吃掉 key
@@ -283,7 +311,7 @@ const Input = {
             this.isJustPressed('f') || this.isJustPressed('F') ||
             this.isCodeJustPressed('KeyX') || this.isCodeJustPressed('KeyK') ||
             this.isCodeJustPressed('KeyC') || this.isCodeJustPressed('KeyF') ||
-            this._touchState.special;
+            this._touchState.special || this._auto.special;
     },
     wantUltimate() {
         // V / Q / R / Shift+X / U — 大絕招
@@ -293,10 +321,15 @@ const Input = {
             this.isJustPressed('u') || this.isJustPressed('U') ||
             this.isCodeJustPressed('KeyV') || this.isCodeJustPressed('KeyQ') ||
             this.isCodeJustPressed('KeyR') || this.isCodeJustPressed('KeyU') ||
-            this._touchState.ultimate;
+            this._touchState.ultimate || this._auto.ultimate;
     },
     wantStart() {
         return this.isJustPressed('Enter') || this.isCodeJustPressed('Enter') || this._touchState.anyTap;
+    },
+    /** 掛機模式切換：H / P */
+    wantAutoToggle() {
+        return this.isJustPressed('h') || this.isJustPressed('H') || this.isCodeJustPressed('KeyH') ||
+            this.isJustPressed('p') || this.isJustPressed('P') || this.isCodeJustPressed('KeyP');
     }
 };
 
@@ -557,7 +590,7 @@ class Player {
 
         // Movement
         const ax = Input.getAxisX();
-        const isRunning = Input.isDown('Shift');
+        const isRunning = Input.isRunning();
         const moveSpeed = isRunning ? this.runSpeed : this.speed;
 
         if (this.attackTimer === 0) {
@@ -605,10 +638,7 @@ class Player {
         }
 
         // Variable jump height (only cut if jump key released)
-        const holdingJump =
-            Input.isDown('ArrowUp') || Input.isDown('w') || Input.isDown('W') ||
-            Input.isDown(' ') || Input.isDown('Space');
-        if (!holdingJump && this.vy < -4) {
+        if (!Input.isHoldingJump() && this.vy < -4) {
             this.vy *= 0.55;
         }
 
@@ -1657,6 +1687,328 @@ class HeartItem {
 }
 
 // ================================================================
+//  AUTO PLAY — 自動掛機模式
+//  自動走關、打怪、撿物、放技能／大絕，通關或死亡後循環再開
+// ================================================================
+const AutoPlay = {
+    enabled: false,
+    lastX: 0,
+    stuckFrames: 0,
+    jumpCooldown: 0,
+    actionCooldown: 0,
+    retreatFrames: 0,
+    statusText: '',
+    statusTimer: 0,
+    loopCount: 0,
+    thinkTick: 0,
+
+    setEnabled(on, announce = true) {
+        this.enabled = !!on;
+        this.stuckFrames = 0;
+        this.jumpCooldown = 0;
+        this.actionCooldown = 0;
+        this.retreatFrames = 0;
+        this.lastX = 0;
+        if (!this.enabled) Input.clearAuto();
+        if (announce) {
+            this.statusText = this.enabled ? '自動掛機 ON' : '自動掛機 OFF';
+            this.statusTimer = 100;
+            SFX.init();
+            if (this.enabled) SFX.levelUp();
+            else SFX.collect();
+        }
+    },
+
+    toggle() {
+        this.setEnabled(!this.enabled, true);
+    },
+
+    /**
+     * 每幀在 player.update 前呼叫：寫入 Input._auto
+     */
+    think(player, level, state) {
+        Input.clearAuto();
+        if (this.statusTimer > 0) this.statusTimer--;
+        if (!this.enabled || !player || player.dead || !level) return;
+
+        this.thinkTick++;
+        if (this.jumpCooldown > 0) this.jumpCooldown--;
+        if (this.actionCooldown > 0) this.actionCooldown--;
+        if (this.retreatFrames > 0) this.retreatFrames--;
+
+        const px = player.x + player.w / 2;
+        const py = player.y + player.h / 2;
+        const feet = player.y + player.h;
+
+        // 卡住偵測（地面幾乎不動）
+        if (Math.abs(player.x - this.lastX) < 0.6 && player.grounded) {
+            this.stuckFrames++;
+        } else {
+            this.stuckFrames = Math.max(0, this.stuckFrames - 2);
+        }
+        this.lastX = player.x;
+
+        // ── 目標搜尋 ──
+        let bestEnemy = null;
+        let bestEnemyDist = Infinity;
+        for (const e of level.enemies) {
+            if (e.dead) continue;
+            const ex = e.x + e.w / 2;
+            const ey = e.y + e.h / 2;
+            const d = Math.hypot(ex - px, ey - py);
+            // 略偏好前方敵人（推進關卡）
+            const bias = ex >= px - 40 ? 0 : 40;
+            if (d + bias < bestEnemyDist && d < 420) {
+                bestEnemyDist = d;
+                bestEnemy = e;
+            }
+        }
+
+        const boss = (level.boss && !level.boss.dead) ? level.boss : null;
+        if (boss) {
+            const d = Math.hypot(boss.x + boss.w / 2 - px, boss.y + boss.h / 2 - py);
+            // Boss 優先度高
+            if (d < bestEnemyDist + 80) {
+                bestEnemy = boss;
+                bestEnemyDist = d;
+            }
+        }
+
+        // 低血優先撿愛心
+        let heart = null;
+        let heartDist = Infinity;
+        if (player.hp < player.maxHp) {
+            for (const h of (level.hearts || [])) {
+                if (h.dead) continue;
+                const d = Math.hypot(h.x + h.w / 2 - px, h.y + h.h / 2 - py);
+                if (d < heartDist && d < 520) {
+                    heartDist = d;
+                    heart = h;
+                }
+            }
+        }
+
+        // 附近魚（無戰時）
+        let fish = null;
+        let fishDist = Infinity;
+        if (!bestEnemy || bestEnemyDist > 160) {
+            for (const f of level.fish) {
+                if (f.dead) continue;
+                const d = Math.hypot(f.x + f.w / 2 - px, f.y + f.h / 2 - py);
+                if (d < fishDist && d < 280) {
+                    fishDist = d;
+                    fish = f;
+                }
+            }
+        }
+
+        // 決定移動目標
+        let targetX = state === 'BOSS' ? (boss ? boss.x + boss.w / 2 : level.w * 0.5) : level.w - 60;
+        let targetY = player.y;
+
+        const needHeal = player.hp <= 2 && heart;
+        if (needHeal) {
+            targetX = heart.x + heart.w / 2;
+            targetY = heart.y;
+        } else if (bestEnemy && bestEnemyDist < 380) {
+            targetX = bestEnemy.x + bestEnemy.w / 2;
+            targetY = bestEnemy.y + bestEnemy.h / 2;
+            // 近戰保持一點距離，方便技能與踩踏
+            if (bestEnemyDist < 36) {
+                targetX = px + (targetX > px ? -1 : 1) * 20;
+            }
+            // Boss 衝撞時後退
+            if (boss && bestEnemy === boss && boss.state === 'attack' && bestEnemyDist < 140) {
+                this.retreatFrames = Math.max(this.retreatFrames, 18);
+            }
+        } else if (heart && player.hp < player.maxHp && heartDist < 220) {
+            targetX = heart.x + heart.w / 2;
+            targetY = heart.y;
+        } else if (fish) {
+            targetX = fish.x + fish.w / 2;
+            targetY = fish.y;
+        }
+
+        // 水平移動
+        let ax = 0;
+        if (this.retreatFrames > 0) {
+            const threatX = bestEnemy ? bestEnemy.x + bestEnemy.w / 2 : px + player.dir * 10;
+            ax = threatX > px ? -1 : 1;
+        } else if (targetX > px + 10) {
+            ax = 1;
+        } else if (targetX < px - 10) {
+            ax = -1;
+        }
+
+        // 無戰無物 → 向關卡終點推進
+        if (!needHeal && !bestEnemy && !fish && state !== 'BOSS') {
+            ax = 1;
+        }
+
+        Input._auto.run = true;
+        Input._auto.axisX = ax;
+
+        // 瞄準（技能／近戰）
+        if (bestEnemy) {
+            const edx = (bestEnemy.x + bestEnemy.w / 2) - px;
+            const edy = (bestEnemy.y + bestEnemy.h / 2) - py;
+            if (Math.abs(edx) > 8) Input._auto.axisX = edx > 0 ? 1 : -1;
+            if (Math.abs(edy) > 36 && Math.abs(edx) < 260) {
+                Input._auto.axisY = edy > 0 ? 1 : -1;
+            }
+        } else if (heart && needHeal) {
+            const hdy = (heart.y + heart.h / 2) - py;
+            if (Math.abs(hdy) > 30) Input._auto.axisY = hdy > 0 ? 1 : -1;
+        }
+
+        // ── 戰鬥 ──
+        // 近戰
+        if (bestEnemy && bestEnemyDist < 58 && this.actionCooldown <= 0 && player.attackTimer === 0) {
+            Input._auto.attack = true;
+            this.actionCooldown = 12;
+        }
+
+        // 技能（中距離）
+        if (bestEnemy && bestEnemyDist < 240 && bestEnemyDist > 40 &&
+            player.specialCooldown <= 0 && this.actionCooldown <= 0) {
+            Input._auto.special = true;
+            this.actionCooldown = 10;
+        }
+        // Boss 或近距離也可丟技能
+        if (bestEnemy && bestEnemyDist < 100 && player.specialCooldown <= 0 &&
+            this.actionCooldown <= 0 && this.thinkTick % 20 === 0) {
+            Input._auto.special = true;
+            this.actionCooldown = 8;
+        }
+
+        // 大絕：Boss / 群怪 / 危急
+        if (player.ultCharge >= player.ultMax && player.ultTimer <= 0) {
+            let nearCount = 0;
+            for (const e of level.enemies) {
+                if (e.dead) continue;
+                if (Math.hypot(e.x + e.w / 2 - px, e.y + e.h / 2 - py) < 200) nearCount++;
+            }
+            const wantUlt =
+                (boss && bestEnemyDist < 220) ||
+                nearCount >= 2 ||
+                (bestEnemy && bestEnemyDist < 100) ||
+                player.hp <= 2;
+            if (wantUlt) Input._auto.ultimate = true;
+        }
+
+        // ── 跳躍 ──
+        let shouldJump = false;
+
+        // 卡住
+        if (this.stuckFrames > 28) {
+            shouldJump = true;
+            this.stuckFrames = 0;
+            if (Math.random() < 0.45) this.retreatFrames = 14;
+        }
+
+        // 目標在上方
+        if (targetY < player.y - 36 && player.grounded) {
+            shouldJump = true;
+        }
+
+        // 踩踏小怪
+        if (bestEnemy && bestEnemy !== boss && player.grounded &&
+            Math.abs((bestEnemy.x + bestEnemy.w / 2) - px) < 55 &&
+            bestEnemy.y + 8 >= player.y) {
+            shouldJump = true;
+        }
+
+        // 前方有較高平台可踩
+        if (player.grounded && ax !== 0) {
+            const lookX = ax > 0 ? player.x + player.w + 28 : player.x - 28;
+            let padAbove = null;
+            for (const p of level.platforms) {
+                if (!p.oneWay) continue;
+                if (lookX < p.x - 10 || lookX > p.x + p.w + 10) continue;
+                if (p.y < feet - 20 && p.y > feet - 150) {
+                    if (!padAbove || p.y > padAbove.y) padAbove = p; // 最近的上方平台
+                }
+            }
+            // 若終點在前方且有可跳平台，偶爾跳上去撿資源
+            if (padAbove && (fish || heart || bestEnemy) && targetY < feet - 20) {
+                shouldJump = true;
+            }
+            // 前方極近有牆狀阻擋感（平台邊緣）時跳
+            if (this.stuckFrames > 12) shouldJump = true;
+        }
+
+        // Boss 衝刺閃避
+        if (boss && boss.state === 'attack' && bestEnemyDist < 200) {
+            shouldJump = true;
+        }
+
+        // 敵方投射物粗略閃避（靠近且大致朝向玩家）
+        for (const proj of level.projectiles) {
+            if (proj.dead || proj.isPlayer) continue;
+            const ddx = proj.x - px;
+            const ddy = Math.abs(proj.y - py);
+            const approaching = (proj.vx > 0 && ddx < 0) || (proj.vx < 0 && ddx > 0) || Math.abs(proj.vx) < 0.5;
+            if (approaching && Math.abs(ddx) < 100 && ddy < 48) {
+                shouldJump = true;
+                break;
+            }
+        }
+
+        if (shouldJump && this.jumpCooldown <= 0) {
+            Input._auto.jump = true;
+            Input._auto.jumpHeld = true;
+            this.jumpCooldown = 16;
+        } else if (!player.grounded && player.vy < 0) {
+            // 滯空保持跳高
+            Input._auto.jumpHeld = true;
+        } else if (!player.grounded && bestEnemy && bestEnemy.y < player.y) {
+            Input._auto.jumpHeld = true;
+        }
+    },
+
+    drawOverlay(ctx, W, H) {
+        if (!this.enabled && this.statusTimer <= 0) return;
+
+        // 右上角掛機徽章
+        if (this.enabled) {
+            const pulse = 0.75 + Math.sin(Date.now() / 200) * 0.25;
+            const bx = W - 150;
+            const by = 56;
+            ctx.fillStyle = `rgba(20, 40, 20, ${0.75 * pulse})`;
+            ctx.fillRect(bx, by, 132, 28);
+            ctx.strokeStyle = '#6f6';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(bx, by, 132, 28);
+            ctx.fillStyle = '#8f8';
+            ctx.font = 'bold 12px "Noto Sans TC", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('🐱 自動掛機中', bx + 66, by + 19);
+            if (this.loopCount > 0) {
+                ctx.font = '9px "Press Start 2P", monospace';
+                ctx.fillStyle = '#aae';
+                ctx.fillText(`LOOP ${this.loopCount}`, bx + 66, by + 42);
+            }
+            ctx.textAlign = 'left';
+        }
+
+        // 狀態提示（開關瞬間）
+        if (this.statusTimer > 0 && this.statusText) {
+            const a = Math.min(1, this.statusTimer / 20);
+            ctx.save();
+            ctx.globalAlpha = a;
+            ctx.fillStyle = 'rgba(0,0,0,0.7)';
+            ctx.fillRect(W / 2 - 120, 70, 240, 36);
+            ctx.fillStyle = this.enabled || this.statusText.indexOf('ON') >= 0 ? '#8f8' : '#faa';
+            ctx.font = 'bold 18px "Noto Sans TC", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(this.statusText, W / 2, 94);
+            ctx.restore();
+            ctx.textAlign = 'left';
+        }
+    }
+};
+
+// ================================================================
 //  LEVEL GENERATOR
 // ================================================================
 function generateLevel(config) {
@@ -2227,7 +2579,13 @@ const Game = {
 
             case 'TITLE':
                 this.titleTimer++;
-                if (Input.wantStart()) {
+                // H / P：直接進關並開掛機（跳過序章）
+                if (Input.wantAutoToggle()) {
+                    AutoPlay.setEnabled(true, true);
+                    AutoPlay.loopCount = 0;
+                    Transition.start(() => this.changeState('LEVEL1'));
+                } else if (Input.wantStart()) {
+                    AutoPlay.setEnabled(false, false);
                     Transition.start(() => this.changeState('PROLOGUE'));
                 }
                 break;
@@ -2245,8 +2603,18 @@ const Game = {
             case 'VICTORY':
             case 'GAMEOVER':
                 this.resultTimer++;
-                if (this.resultTimer > 60 && Input.wantStart()) {
+                // 掛機模式：通關／死亡後自動循環再開
+                if (AutoPlay.enabled && this.resultTimer > 100) {
+                    if (this.state === 'VICTORY') AutoPlay.loopCount++;
+                    Transition.start(() => this.changeState('LEVEL1'));
+                } else if (this.resultTimer > 60 && Input.wantStart()) {
+                    AutoPlay.setEnabled(false, false);
                     Transition.start(() => this.changeState('TITLE'));
+                } else if (this.resultTimer > 60 && Input.wantAutoToggle()) {
+                    // 結算畫面也可直接掛機再戰
+                    AutoPlay.setEnabled(true, true);
+                    if (this.state === 'VICTORY') AutoPlay.loopCount++;
+                    Transition.start(() => this.changeState('LEVEL1'));
                 }
                 break;
         }
@@ -2272,6 +2640,12 @@ const Game = {
     },
 
     updateGameplay() {
+        // 掛機開關（遊戲中可隨時 H / P）
+        if (Input.wantAutoToggle()) AutoPlay.toggle();
+
+        // 自動掛機決策 → 注入虛擬輸入
+        AutoPlay.think(this.player, this.level, this.state);
+
         this.player.update(this.level);
 
         // Enemies
@@ -2420,14 +2794,19 @@ const Game = {
         if (Math.floor(this.titleTimer / 30) % 2 === 0) {
             ctx.font = '14px "Press Start 2P", cursive';
             ctx.fillStyle = '#fff';
-            ctx.fillText('PRESS ENTER OR TAP TO START', W / 2, 420);
+            ctx.fillText('PRESS ENTER OR TAP TO START', W / 2, 400);
         }
+
+        // Auto-play option
+        ctx.font = '13px "Noto Sans TC", sans-serif';
+        ctx.fillStyle = Math.floor(this.titleTimer / 40) % 2 === 0 ? '#8f8' : '#5a5';
+        ctx.fillText('按 H 或 P 啟動自動掛機模式', W / 2, 435);
 
         // Instructions
         ctx.font = '11px "Noto Sans TC", sans-serif';
         ctx.fillStyle = '#888';
         ctx.fillText('X 技能可配合 ↑↓←→ 八向射擊 ｜ Z 攻擊 ｜ V 大絕 ｜ 空白跳躍', W / 2, 470);
-        ctx.fillText('Hold ↑↓←→ + X to aim skill  ·  Z Atk  ·  V Ult  ·  Space Jump', W / 2, 490);
+        ctx.fillText('遊戲中按 H / P 可開關掛機  ·  Hold ↑↓←→ + X 瞄準技能', W / 2, 490);
 
         ctx.textAlign = 'left';
     },
@@ -2541,6 +2920,7 @@ const Game = {
 
         // HUD
         drawHUD(this.player, this.level, this.levelNum);
+        AutoPlay.drawOverlay(ctx, W, H);
     },
 
     drawVictory() {
@@ -2587,7 +2967,11 @@ const Game = {
         if (this.resultTimer > 60 && Math.floor(this.resultTimer / 25) % 2 === 0) {
             ctx.font = '12px "Press Start 2P", cursive';
             ctx.fillStyle = '#aaa';
-            ctx.fillText('PRESS ENTER TO CONTINUE', W / 2, 470);
+            if (AutoPlay.enabled) {
+                ctx.fillText('AUTO RESTART...', W / 2, 460);
+            } else {
+                ctx.fillText('ENTER 回標題  ·  H 掛機再戰', W / 2, 460);
+            }
         }
 
         ctx.textAlign = 'left';
@@ -2621,7 +3005,11 @@ const Game = {
         if (this.resultTimer > 60 && Math.floor(this.resultTimer / 25) % 2 === 0) {
             ctx.font = '12px "Press Start 2P", cursive';
             ctx.fillStyle = '#888';
-            ctx.fillText('PRESS ENTER TO RETRY', W / 2, 440);
+            if (AutoPlay.enabled) {
+                ctx.fillText('AUTO RESTART...', W / 2, 440);
+            } else {
+                ctx.fillText('ENTER 回標題  ·  H 掛機再戰', W / 2, 440);
+            }
         }
 
         ctx.textAlign = 'left';
