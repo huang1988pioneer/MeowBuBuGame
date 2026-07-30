@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
     <meta name="description" content="喵布布的復仇 - 一款像素風動作平台遊戲。喵布布的魚被偷了，展開一連串復仇之旅！">
     <meta name="keywords" content="喵布布的復仇, MeowBuBu's Revenge, 像素遊戲, 動作平台, HTML5 Game">
     <meta name="theme-color" content="#08080e">
@@ -10,22 +10,28 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="format-detection" content="telephone=no">
+    <meta name="HandheldFriendly" content="true">
     <title>喵布布的復仇 | MeowBuBu's Revenge</title>
 
-    <!-- Google Fonts -->
+    <!-- 系統字體優先；外連字體失敗也不影響遊玩 -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Press+Start+2P&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript>
+        <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Press+Start+2P&display=swap" rel="stylesheet">
+    </noscript>
 
-    <!-- Stylesheet -->
     <link rel="stylesheet" href="style.css">
+    <style>
+        /* 關鍵後備：CSS 檔失敗時仍可顯示 */
+        #game-container { background:#000; min-height:200px; }
+        #game-canvas { background:#111; }
+    </style>
 </head>
 <body>
     <div id="game-container">
-        <!-- Scanline Overlay -->
         <div class="scanlines"></div>
 
-        <!-- Loading Screen -->
         <div id="loading-screen" class="active">
             <div class="loading-cat-icon">🐱</div>
             <h1 class="loading-title">喵布布的復仇</h1>
@@ -33,16 +39,13 @@
             <div class="loading-bar-container">
                 <div id="loading-bar"></div>
             </div>
-            <p id="loading-text">Loading Assets... 0%</p>
-            <p class="loading-hint">手機請橫持螢幕 · 左右虛擬鍵操作</p>
+            <p id="loading-text">載入中... 0%</p>
+            <p class="loading-hint">建議橫持手機 · 點螢幕開始 · 左右虛擬鍵操作</p>
         </div>
 
-        <!-- Game Canvas -->
         <canvas id="game-canvas" width="960" height="540"></canvas>
 
-        <!-- Mobile Touch Controls -->
         <div id="touch-controls" aria-hidden="true">
-            <!-- Left: D-pad -->
             <div id="dpad">
                 <div class="dpad-btn" id="btn-up" data-dir="up" role="button" aria-label="上">▲</div>
                 <div class="dpad-row">
@@ -52,7 +55,6 @@
                 </div>
             </div>
 
-            <!-- Right: actions -->
             <div id="action-buttons">
                 <div class="action-btn action-ult" id="btn-ult" role="button" aria-label="大絕">
                     <span class="btn-label">大絕</span>
@@ -68,12 +70,18 @@
                 </div>
             </div>
 
-            <!-- Utility: auto AFK -->
             <button type="button" id="btn-auto" class="util-btn" aria-label="自動掛機">掛機</button>
         </div>
     </div>
 
-    <!-- Game Script -->
+    <script>
+        // 最早偵測錯誤，避免白屏無訊息
+        window.onerror = function (msg, src, line) {
+            var t = document.getElementById('loading-text');
+            if (t) t.textContent = '錯誤: ' + msg + ' (' + line + ')';
+            return false;
+        };
+    </script>
     <script src="game.js"></script>
 </body>
 </html>

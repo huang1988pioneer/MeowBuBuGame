@@ -1,96 +1,109 @@
 /* ============================================
    喵布布的復仇 - MeowBuBu's Revenge
-   Premium Pixel-Art Platformer Stylesheet
-   Mobile-first touch friendly
+   Mobile-compatible layout (iOS Safari / Android)
+   尺寸由 Layout.fit() JS 設定，CSS 僅提供後備
    ============================================ */
 
-/* Reset and Base Styles */
 * {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
     -webkit-tap-highlight-color: transparent;
-    touch-action: none; /* Prevent pull-to-refresh / pinch */
+    -webkit-touch-callout: none;
 }
 
-html, body {
+html {
     width: 100%;
     height: 100%;
-    height: 100dvh;
     background-color: #08080e;
-    font-family: 'Noto Sans TC', sans-serif;
     overflow: hidden;
-    overscroll-behavior: none;
-    position: fixed;
-    inset: 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    /* Safe area for notched phones */
-    padding:
-        env(safe-area-inset-top, 0)
-        env(safe-area-inset-right, 0)
-        env(safe-area-inset-bottom, 0)
-        env(safe-area-inset-left, 0);
 }
 
-/* Animated background pattern */
+body {
+    width: 100%;
+    height: 100%;
+    min-height: 100vh;
+    /* 舊 Safari iOS */
+    min-height: -webkit-fill-available;
+    background-color: #08080e;
+    font-family: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', 'Segoe UI', sans-serif;
+    overflow: hidden;
+    /* Firefox / Safari 桌面：flex 置中遊戲區 */
+    display: -webkit-box;
+    display: -moz-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-pack: center;
+    -moz-box-pack: center;
+    -ms-flex-pack: center;
+    justify-content: center;
+    -webkit-box-align: center;
+    -moz-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+}
+
+/* 僅粗指標（手機）鎖觸控預設行為；桌面 Firefox 保留正常滑鼠 */
+@media (pointer: coarse) {
+    body {
+        touch-action: none;
+        -ms-touch-action: none;
+        overscroll-behavior: none;
+        padding: constant(safe-area-inset-top) constant(safe-area-inset-right) constant(safe-area-inset-bottom) constant(safe-area-inset-left);
+        padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    }
+}
+
+/* 背景裝飾（失敗也不影響遊戲） */
 body::before {
     content: "";
     position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
     background-image:
         radial-gradient(circle at 20% 50%, rgba(255, 140, 0, 0.04) 0%, transparent 50%),
-        radial-gradient(circle at 80% 20%, rgba(0, 200, 255, 0.03) 0%, transparent 50%),
-        linear-gradient(45deg, rgba(20, 20, 30, 0.5) 25%, transparent 25%, transparent 75%, rgba(20, 20, 30, 0.5) 75%),
-        linear-gradient(45deg, rgba(20, 20, 30, 0.5) 25%, transparent 25%, transparent 75%, rgba(20, 20, 30, 0.5) 75%);
-    background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
-    background-position: 0 0, 0 0, 0 0, 20px 20px;
+        radial-gradient(circle at 80% 20%, rgba(0, 200, 255, 0.03) 0%, transparent 50%);
     z-index: -1;
-    animation: bg-scroll 40s linear infinite;
     pointer-events: none;
 }
 
-@keyframes bg-scroll {
-    0% { background-position: 0 0, 0 0, 0 0, 20px 20px; }
-    100% { background-position: 0 0, 0 0, 200px 200px, 220px 220px; }
-}
-
-/* Game Container — fill screen while keeping 16:9 */
+/* Game Container — JS 會覆寫 width/height */
 #game-container {
     position: relative;
-    width: min(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px),
-               calc((100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) * 16 / 9),
-               960px);
-    height: min(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px),
-                calc((100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)) * 9 / 16),
-                540px);
-    max-width: 100%;
+    width: 100%;
+    max-width: 960px;
+    /* 後備 16:9；JS 設像素後以此為準 */
+    height: auto;
+    /* aspect-ratio 舊瀏覽器忽略即可 */
+    aspect-ratio: 16 / 9;
     background-color: #000;
-    border: 3px solid transparent;
-    border-image: linear-gradient(135deg, #ffcf00 0%, #ff8c00 30%, #e65c00 50%, #ff8c00 70%, #ffcf00 100%) 1;
-    box-shadow:
-        0 0 30px rgba(255, 140, 0, 0.25),
-        0 0 60px rgba(255, 140, 0, 0.1),
-        inset 0 0 50px rgba(0, 0, 0, 0.9);
+    border: 3px solid #e65c00;
+    box-shadow: 0 0 30px rgba(255, 140, 0, 0.25);
+    display: -webkit-box;
+    display: -ms-flexbox;
     display: flex;
+    -webkit-box-pack: center;
+    -ms-flex-pack: center;
     justify-content: center;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
     align-items: center;
     overflow: hidden;
+    /* 關鍵：子元素絕對定位的參考 */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
 }
 
-/* Mobile / tablet: edge-to-edge play area */
-@media (max-width: 1024px), (pointer: coarse) {
+@media (max-width: 1024px) {
     #game-container {
         border-width: 0;
-        border-image: none;
         box-shadow: none;
-        width: min(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px),
-                   calc((100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) * 16 / 9));
-        height: min(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px),
-                    calc((100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)) * 9 / 16));
         max-width: none;
-        max-height: none;
         border-radius: 0;
     }
 }
@@ -100,9 +113,13 @@ body::before {
     width: 100%;
     height: 100%;
     display: block;
+    image-rendering: -moz-crisp-edges;
     image-rendering: pixelated;
     image-rendering: crisp-edges;
+    -ms-interpolation-mode: nearest-neighbor;
     touch-action: none;
+    -ms-touch-action: none;
+    background: #000;
 }
 
 /* Scanline Effect */
@@ -127,69 +144,78 @@ body::before {
     top: 0; left: 0;
     width: 100%; height: 100%;
     background: radial-gradient(ellipse at center, #151520 0%, #08080e 100%);
+    display: -webkit-box;
+    display: -ms-flexbox;
     display: flex;
+    -webkit-box-orient: vertical;
+    -webkit-box-direction: normal;
+    -ms-flex-direction: column;
     flex-direction: column;
+    -webkit-box-pack: center;
+    -ms-flex-pack: center;
     justify-content: center;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
     align-items: center;
     z-index: 20;
     color: #fff;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.6s ease-out;
+    -webkit-transition: opacity 0.5s ease-out;
+    transition: opacity 0.5s ease-out;
     padding: 16px;
+    text-align: center;
 }
 
 #loading-screen.active {
     opacity: 1;
-    pointer-events: all;
+    pointer-events: auto;
 }
 
 .loading-cat-icon {
-    font-size: clamp(2.5rem, 6vw, 4rem);
-    animation: bounce-cat 1s ease-in-out infinite;
+    font-size: 48px;
     margin-bottom: 10px;
-    filter: drop-shadow(0 0 10px rgba(255, 200, 0, 0.5));
+    -webkit-animation: bounce-cat 1s ease-in-out infinite;
+    animation: bounce-cat 1s ease-in-out infinite;
 }
 
+@-webkit-keyframes bounce-cat {
+    0%, 100% { -webkit-transform: translateY(0); transform: translateY(0); }
+    50% { -webkit-transform: translateY(-12px); transform: translateY(-12px); }
+}
 @keyframes bounce-cat {
-    0%, 100% { transform: translateY(0) rotate(-5deg); }
-    50% { transform: translateY(-12px) rotate(5deg); }
+    0%, 100% { -webkit-transform: translateY(0); transform: translateY(0); }
+    50% { -webkit-transform: translateY(-12px); transform: translateY(-12px); }
 }
 
 .loading-title {
-    font-family: 'Noto Sans TC', sans-serif;
-    font-size: clamp(1.6rem, 5vw, 3.5rem);
+    font-family: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+    font-size: 28px;
     font-weight: 900;
     margin-bottom: 8px;
-    background: linear-gradient(180deg, #ffe066 0%, #f6a02b 40%, #e65c00 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    filter: drop-shadow(3px 3px 0px #000) drop-shadow(0 0 15px rgba(255, 160, 43, 0.4));
-    letter-spacing: 4px;
-    text-align: center;
+    color: #ffcc00;
+    text-shadow: 2px 2px 0 #000;
+    letter-spacing: 2px;
 }
 
 .loading-subtitle {
-    font-family: 'Press Start 2P', cursive;
-    font-size: clamp(0.45rem, 1.5vw, 0.9rem);
-    margin-bottom: 32px;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    margin-bottom: 28px;
     color: #aab;
     text-shadow: 1px 1px 0 #000;
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    text-align: center;
+    letter-spacing: 1px;
 }
 
 .loading-bar-container {
-    width: min(70%, 360px);
-    height: 18px;
+    width: 70%;
+    max-width: 320px;
+    height: 16px;
     background-color: #1a1a2e;
     border: 2px solid #444;
-    border-radius: 9px;
+    border-radius: 8px;
     padding: 2px;
-    margin-bottom: 15px;
-    box-shadow: inset 0 2px 6px rgba(0,0,0,0.8), 0 0 8px rgba(255,140,0,0.1);
+    margin-bottom: 12px;
     overflow: hidden;
 }
 
@@ -197,50 +223,26 @@ body::before {
     width: 0%;
     height: 100%;
     background: linear-gradient(90deg, #e65c00, #ff8c00, #ffcf00);
-    border-radius: 7px;
-    transition: width 0.3s ease;
-    box-shadow: 0 0 12px rgba(255, 140, 0, 0.6);
-    position: relative;
-}
-
-#loading-bar::after {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 50%;
-    background: linear-gradient(to bottom, rgba(255,255,255,0.3), transparent);
-    border-radius: 7px 7px 0 0;
+    border-radius: 6px;
+    -webkit-transition: width 0.25s ease;
+    transition: width 0.25s ease;
 }
 
 #loading-text {
-    font-family: 'Press Start 2P', cursive;
-    font-size: clamp(0.5rem, 1.5vw, 0.6rem);
+    font-family: 'Press Start 2P', monospace;
+    font-size: 9px;
     color: #888;
-    animation: pulse 1.8s ease-in-out infinite;
     letter-spacing: 1px;
-    text-align: center;
 }
 
 .loading-hint {
-    margin-top: 18px;
-    font-size: clamp(0.75rem, 2.5vw, 0.95rem);
+    margin-top: 16px;
+    font-size: 13px;
     color: #777;
-    text-align: center;
     display: none;
 }
 
-@media (pointer: coarse), (max-width: 1024px) {
-    .loading-hint { display: block; }
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 1; }
-}
-
-/* ============================================
-   Touch Controls
-   ============================================ */
+/* Touch Controls — 預設隱藏；JS 在觸控裝置加上 force-show */
 #touch-controls {
     position: absolute;
     top: 0; left: 0;
@@ -250,98 +252,124 @@ body::before {
     display: none;
 }
 
-/* Show on touch devices / narrow screens */
-@media (pointer: coarse), (max-width: 1024px) {
-    #touch-controls {
-        display: block;
-    }
-}
-
-/* Force-show class (set by JS when needed) */
 #touch-controls.force-show {
     display: block !important;
 }
 
+/* 行動裝置顯示載入提示 */
+@media (pointer: coarse) {
+    .loading-hint { display: block; }
+}
+
 #dpad {
     position: absolute;
-    bottom: max(10px, env(safe-area-inset-bottom, 0px));
-    left: max(10px, env(safe-area-inset-left, 0px));
+    bottom: 12px;
+    left: 12px;
+    display: -webkit-box;
+    display: -ms-flexbox;
     display: flex;
+    -webkit-box-orient: vertical;
+    -webkit-box-direction: normal;
+    -ms-flex-direction: column;
     flex-direction: column;
     gap: 6px;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
     align-items: center;
     pointer-events: auto;
-    opacity: 0.72;
-    user-select: none;
-    -webkit-user-select: none;
+    opacity: 0.85;
+    z-index: 16;
 }
 
 #dpad .dpad-row {
+    display: -webkit-box;
+    display: -ms-flexbox;
     display: flex;
     gap: 6px;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
     align-items: center;
 }
 
 .dpad-btn {
-    width: clamp(48px, 11vmin, 70px);
-    height: clamp(48px, 11vmin, 70px);
-    background: rgba(20, 24, 40, 0.55);
-    border: 2px solid rgba(255, 255, 255, 0.35);
+    width: 56px;
+    height: 56px;
+    min-width: 48px;
+    min-height: 48px;
+    background: rgba(20, 24, 40, 0.7);
+    border: 2px solid rgba(255, 255, 255, 0.4);
     border-radius: 14px;
+    display: -webkit-box;
+    display: -ms-flexbox;
     display: flex;
+    -webkit-box-pack: center;
+    -ms-flex-pack: center;
     justify-content: center;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
     align-items: center;
-    color: rgba(255, 255, 255, 0.85);
-    font-size: clamp(16px, 4vmin, 24px);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 20px;
     user-select: none;
     -webkit-user-select: none;
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+    -webkit-user-drag: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    touch-action: none;
+    -ms-touch-action: none;
+    cursor: pointer;
 }
 
 .dpad-btn.pressed,
 .dpad-btn:active {
-    background: rgba(255, 200, 80, 0.45);
+    background: rgba(255, 200, 80, 0.55);
+    border-color: rgba(255, 220, 100, 0.9);
+    -webkit-transform: scale(0.94);
     transform: scale(0.94);
-    border-color: rgba(255, 220, 100, 0.85);
     color: #fff;
 }
 
-/* Action cluster (right) — 2×2 grid */
+/* Action cluster */
 #action-buttons {
     position: absolute;
-    bottom: max(10px, env(safe-area-inset-bottom, 0px));
-    right: max(10px, env(safe-area-inset-right, 0px));
+    bottom: 12px;
+    right: 12px;
+    display: -ms-grid;
     display: grid;
+    -ms-grid-columns: auto 10px auto;
     grid-template-columns: auto auto;
     grid-template-rows: auto auto;
-    gap: clamp(8px, 2vmin, 14px);
-    align-items: end;
-    justify-items: center;
+    gap: 10px;
     pointer-events: auto;
-    opacity: 0.78;
-    user-select: none;
-    -webkit-user-select: none;
+    opacity: 0.9;
+    z-index: 16;
 }
 
 .action-btn {
-    width: clamp(52px, 12vmin, 74px);
-    height: clamp(52px, 12vmin, 74px);
+    width: 60px;
+    height: 60px;
+    min-width: 48px;
+    min-height: 48px;
     border-radius: 50%;
+    display: -webkit-box;
+    display: -ms-flexbox;
     display: flex;
+    -webkit-box-pack: center;
+    -ms-flex-pack: center;
     justify-content: center;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
     align-items: center;
-    color: rgba(255, 255, 255, 0.92);
-    font-family: 'Noto Sans TC', sans-serif;
+    color: rgba(255, 255, 255, 0.95);
+    font-family: 'Noto Sans TC', 'PingFang TC', sans-serif;
     font-weight: 700;
-    font-size: clamp(12px, 2.8vmin, 16px);
+    font-size: 14px;
     user-select: none;
     -webkit-user-select: none;
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
-    border: 2px solid rgba(255, 255, 255, 0.35);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    touch-action: none;
+    -ms-touch-action: none;
+    cursor: pointer;
 }
 
 .action-btn .btn-label {
@@ -350,113 +378,111 @@ body::before {
     text-align: center;
 }
 
-/* Slightly smaller secondary row */
 .action-ult,
 .action-skill {
-    width: clamp(46px, 10.5vmin, 64px);
-    height: clamp(46px, 10.5vmin, 64px);
-    font-size: clamp(11px, 2.4vmin, 14px);
+    width: 52px;
+    height: 52px;
+    font-size: 12px;
 }
 
 .action-jump {
-    background: rgba(0, 160, 220, 0.35);
-    border-color: rgba(80, 220, 255, 0.65);
-    box-shadow: 0 0 14px rgba(0, 200, 255, 0.25), 0 4px 12px rgba(0, 0, 0, 0.35);
+    background: rgba(0, 140, 200, 0.55);
+    border-color: rgba(80, 220, 255, 0.75);
 }
 
 .action-attack {
-    background: rgba(230, 90, 0, 0.4);
-    border-color: rgba(255, 150, 60, 0.7);
-    box-shadow: 0 0 14px rgba(255, 120, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.35);
-    width: clamp(56px, 13vmin, 78px);
-    height: clamp(56px, 13vmin, 78px);
+    background: rgba(220, 90, 0, 0.6);
+    border-color: rgba(255, 150, 60, 0.8);
+    width: 66px;
+    height: 66px;
 }
 
 .action-skill {
-    background: rgba(140, 40, 220, 0.35);
-    border-color: rgba(200, 120, 255, 0.6);
+    background: rgba(120, 40, 200, 0.55);
+    border-color: rgba(200, 120, 255, 0.7);
 }
 
 .action-ult {
-    background: rgba(220, 160, 0, 0.4);
-    border-color: rgba(255, 210, 60, 0.75);
+    background: rgba(200, 150, 0, 0.6);
+    border-color: rgba(255, 210, 60, 0.85);
     color: #ffe066;
-    box-shadow: 0 0 16px rgba(255, 180, 0, 0.35), 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
 .action-btn.pressed,
 .action-btn:active {
+    -webkit-transform: scale(0.9);
     transform: scale(0.9);
-    filter: brightness(1.35);
+    filter: brightness(1.3);
 }
 
-/* Auto AFK utility button — top right, out of combat thumbs */
+/* Auto AFK */
 .util-btn {
     position: absolute;
-    top: max(8px, env(safe-area-inset-top, 0px));
-    right: max(8px, env(safe-area-inset-right, 0px));
+    top: 10px;
+    right: 10px;
     pointer-events: auto;
-    border: 2px solid rgba(120, 220, 120, 0.55);
-    background: rgba(20, 50, 30, 0.65);
+    border: 2px solid rgba(120, 220, 120, 0.6);
+    background: rgba(20, 50, 30, 0.8);
     color: #9f9;
-    font-family: 'Noto Sans TC', sans-serif;
+    font-family: 'Noto Sans TC', 'PingFang TC', sans-serif;
     font-weight: 700;
-    font-size: clamp(12px, 2.6vmin, 14px);
+    font-size: 13px;
     padding: 8px 12px;
     border-radius: 10px;
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
     cursor: pointer;
     user-select: none;
     -webkit-user-select: none;
-    z-index: 16;
+    z-index: 17;
+    touch-action: none;
+    -ms-touch-action: none;
+    -webkit-appearance: none;
+    appearance: none;
 }
 
 .util-btn.pressed,
 .util-btn:active,
 .util-btn.active {
-    background: rgba(40, 120, 50, 0.75);
+    background: rgba(40, 120, 50, 0.85);
     border-color: #6f6;
     color: #cfc;
-    transform: scale(0.96);
 }
 
 .util-btn.active {
     box-shadow: 0 0 12px rgba(80, 255, 100, 0.45);
 }
 
-/* Short landscape phones — tighter controls so HUD stays readable */
-@media (max-height: 420px) and (pointer: coarse),
-       (max-height: 420px) and (max-width: 1024px) {
+/* 小螢幕／橫屏矮機 */
+@media (max-height: 420px) {
     .dpad-btn {
-        width: 42px;
-        height: 42px;
-        font-size: 14px;
+        width: 44px;
+        height: 44px;
+        font-size: 16px;
         border-radius: 10px;
     }
     .action-btn {
-        width: 46px;
-        height: 46px;
+        width: 48px;
+        height: 48px;
         font-size: 12px;
     }
     .action-attack {
-        width: 52px;
-        height: 52px;
+        width: 54px;
+        height: 54px;
     }
     .action-ult,
     .action-skill {
-        width: 40px;
-        height: 40px;
+        width: 42px;
+        height: 42px;
         font-size: 11px;
     }
-    #dpad { bottom: 6px; left: 6px; gap: 4px; }
+    #dpad { bottom: 6px; left: 6px; }
     #action-buttons { bottom: 6px; right: 6px; gap: 6px; }
-    .util-btn { top: 6px; right: 6px; padding: 6px 10px; font-size: 11px; }
+    .util-btn { top: 6px; right: 6px; padding: 6px 10px; font-size: 12px; }
 }
 
-/* Portrait phones: keep playable, slightly dimmer pads so content shows */
-@media (orientation: portrait) and (max-width: 600px) {
-    #dpad { opacity: 0.8; }
-    #action-buttons { opacity: 0.85; }
+/* 大屏手機加大按鈕 */
+@media (min-width: 700px) and (max-width: 1024px) {
+    .dpad-btn { width: 64px; height: 64px; font-size: 22px; }
+    .action-btn { width: 68px; height: 68px; font-size: 15px; }
+    .action-attack { width: 76px; height: 76px; }
 }

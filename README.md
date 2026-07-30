@@ -33,6 +33,8 @@ node server.js
 - 右上「掛機」鈕可開關自動掛機
 - 長按「跳」可跳更高；觸控時預設奔跑
 - 支援多點觸控（可同時移動＋攻擊）
+- 本機測試：`node server.js` 後手機連 `http://電腦區網IP:5500`（需同一 Wi‑Fi）
+- 已針對 iOS Safari / Android Chrome 修正觸控與畫面尺寸兼容
 
 ### 自動掛機模式
 
@@ -52,3 +54,4 @@ node server.js
 
 - 純 HTML5 Canvas + JavaScript（無框架）
 - 素材位於 `assets/sprites`、`assets/bg`
+- 瀏覽器：Chrome、Firefox、Safari、Edge（桌面與行動）

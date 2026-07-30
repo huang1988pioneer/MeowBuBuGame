@@ -1,20 +1,239 @@
 // ================================================================
 //  喵布布的復仇 - MeowBuBu's Revenge
 //  A pixel-art action platformer
+//  Cross-browser: Chrome / Firefox / Safari / Edge
 // ================================================================
+
+// ================================================================
+//  COMPAT — 跨瀏覽器相容層（Firefox / Safari / 舊 Edge）
+// ================================================================
+const Compat = {
+    // rAF
+    raf: (window.requestAnimationFrame ||
+        window.webkitRequestAnimationFrame ||
+        window.mozRequestAnimationFrame ||
+        window.msRequestAnimationFrame ||
+        function (cb) { return setTimeout(function () { cb(Date.now()); }, 1000 / 60); }).bind(window),
+
+    hasPassive: false,
+    _passiveChecked: false,
+
+    supportsPassive() {
+        if (this._passiveChecked) return this.hasPassive;
+        this._passiveChecked = true;
+        try {
+            let opts = Object.defineProperty({}, 'passive', {
+                get: function () { Compat.hasPassive = true; return true; }
+            });
+            window.addEventListener('t', null, opts);
+            window.removeEventListener('t', null, opts);
+        } catch (e) {
+            this.hasPassive = false;
+        }
+        return this.hasPassive;
+    },
+
+    /** 安全 addEventListener：舊瀏覽器第三參若傳物件會被當成 capture=true */
+    on(el, type, fn, options) {
+        if (!el) return;
+        if (options == null) {
+            el.addEventListener(type, fn, false);
+            return;
+        }
+        if (typeof options === 'boolean') {
+            el.addEventListener(type, fn, options);
+            return;
+        }
+        if (this.supportsPassive()) {
+            el.addEventListener(type, fn, options);
+        } else {
+            el.addEventListener(type, fn, !!options.capture);
+        }
+    },
+
+    /** 桌面精準指標（滑鼠）優先 — 觸控筆電不當成手機 */
+    isPrimarilyTouch() {
+        try {
+            // 有滑鼠 + hover → 桌面操作為主（即使 maxTouchPoints>0）
+            if (window.matchMedia) {
+                const fine = window.matchMedia('(pointer: fine)').matches;
+                const hover = window.matchMedia('(hover: hover)').matches;
+                if (fine && hover) return false;
+                if (window.matchMedia('(pointer: coarse)').matches) return true;
+            }
+        } catch (e) { /* ignore */ }
+        // 無 matchMedia 時：用 UA 粗判行動裝置
+        const ua = navigator.userAgent || '';
+        if (/Android|iPhone|iPad|iPod|Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua)) {
+            return true;
+        }
+        // 僅有觸控且無滑鼠痕跡
+        const pts = navigator.maxTouchPoints || navigator.msMaxTouchPoints || 0;
+        return pts > 0 && !window.matchMedia && ('ontouchstart' in window);
+    },
+
+    isNarrowScreen() {
+        try {
+            return window.innerWidth <= 1024 ||
+                (window.matchMedia && window.matchMedia('(max-width: 1024px)').matches);
+        } catch (e) {
+            return window.innerWidth <= 1024;
+        }
+    }
+};
+
+// Math.hypot polyfill
+if (!Math.hypot) {
+    Math.hypot = function () {
+        let y = 0;
+        for (let i = 0; i < arguments.length; i++) y += arguments[i] * arguments[i];
+        return Math.sqrt(y);
+    };
+}
+// Array.includes polyfill（舊瀏覽器）
+if (!Array.prototype.includes) {
+    Array.prototype.includes = function (search, start) {
+        return this.indexOf(search, start || 0) !== -1;
+    };
+}
 
 // ── Canvas Setup ──
 const gameCanvas = document.getElementById('game-canvas');
-const ctx = gameCanvas.getContext('2d');
+let ctx = null;
+if (gameCanvas) {
+    try { ctx = gameCanvas.getContext('2d', { alpha: false }); } catch (e) { ctx = null; }
+    if (!ctx) {
+        try { ctx = gameCanvas.getContext('2d'); } catch (e2) { ctx = null; }
+    }
+}
 const W = 960, H = 540;
-gameCanvas.width = W;
-gameCanvas.height = H;
+if (gameCanvas) {
+    gameCanvas.width = W;
+    gameCanvas.height = H;
+    // 可聚焦以利部分瀏覽器鍵盤事件
+    if (!gameCanvas.getAttribute('tabindex')) gameCanvas.setAttribute('tabindex', '0');
+}
+// 關閉影像平滑（各前綴）
+if (ctx) {
+    ctx.imageSmoothingEnabled = false;
+    try { ctx.mozImageSmoothingEnabled = false; } catch (e) {}
+    try { ctx.webkitImageSmoothingEnabled = false; } catch (e) {}
+    try { ctx.msImageSmoothingEnabled = false; } catch (e) {}
+}
 
 // ── Timing ──
 let lastTime = 0;
 let deltaTime = 0;
 const TARGET_FPS = 60;
 const FRAME_TIME = 1000 / TARGET_FPS;
+
+// ── DOM closest ──
+function domClosest(el, sel) {
+    if (!el) return null;
+    if (el.closest) {
+        try { return el.closest(sel); } catch (e) { /* invalid selector */ }
+    }
+    let n = el;
+    while (n && n.nodeType === 1) {
+        try {
+            if (n.matches && n.matches(sel)) return n;
+            if (n.msMatchesSelector && n.msMatchesSelector(sel)) return n;
+            if (n.webkitMatchesSelector && n.webkitMatchesSelector(sel)) return n;
+        } catch (e) { break; }
+        n = n.parentElement || n.parentNode;
+    }
+    return null;
+}
+
+/**
+ * Firefox 對未完成載入的 HTMLImageElement.drawImage 會拋例外，
+ * 導致整幀繪製失敗。統一安全繪製。
+ */
+function safeDrawImage(context, img, a, b, c, d, e, f, g, h) {
+    if (!context || !img) return false;
+    try {
+        // Canvas 元素可直接畫
+        const isCanvas = (typeof HTMLCanvasElement !== 'undefined' && img instanceof HTMLCanvasElement) ||
+            (img.tagName && String(img.tagName).toUpperCase() === 'CANVAS');
+        if (!isCanvas) {
+            // HTMLImageElement / ImageBitmap
+            if (typeof img.complete === 'boolean' && !img.complete) return false;
+            const nw = img.naturalWidth != null ? img.naturalWidth : img.width;
+            const nh = img.naturalHeight != null ? img.naturalHeight : img.height;
+            if (!nw || !nh) return false;
+        }
+        // 必須呼叫原生 drawImage，不可再進 safeDrawImage
+        if (h !== undefined) context.drawImage(img, a, b, c, d, e, f, g, h);
+        else if (d !== undefined) context.drawImage(img, a, b, c, d);
+        else if (b !== undefined) context.drawImage(img, a, b);
+        else context.drawImage(img, a);
+        return true;
+    } catch (err) {
+        return false;
+    }
+}
+
+// ================================================================
+//  LAYOUT — JS 計算尺寸（桌面固定 960×540 上限，行動裝置滿版 16:9）
+// ================================================================
+const Layout = {
+    fit() {
+        const container = document.getElementById('game-container');
+        if (!container) return;
+
+        const vv = window.visualViewport;
+        let vw = (vv && vv.width) ? vv.width : (window.innerWidth || document.documentElement.clientWidth || 960);
+        let vh = (vv && vv.height) ? vv.height : (window.innerHeight || document.documentElement.clientHeight || 540);
+
+        vw = Math.max(200, Math.floor(vw));
+        vh = Math.max(160, Math.floor(vh));
+
+        const primarilyTouch = Compat.isPrimarilyTouch();
+        const maxW = primarilyTouch ? vw : Math.min(vw, 960);
+        const maxH = primarilyTouch ? vh : Math.min(vh, 540);
+
+        let w = maxW;
+        let h = Math.floor(w * 9 / 16);
+        if (h > maxH) {
+            h = maxH;
+            w = Math.floor(h * 16 / 9);
+        }
+        // 最小可玩尺寸
+        if (w < 320) { w = Math.min(320, vw); h = Math.floor(w * 9 / 16); }
+
+        container.style.width = w + 'px';
+        container.style.height = h + 'px';
+        container.style.maxWidth = '100%';
+        container.style.maxHeight = '100%';
+
+        // 僅行動裝置鎖 body 高度（桌面 Firefox 鎖死會造成捲動／置中異常）
+        if (primarilyTouch) {
+            document.documentElement.style.height = vh + 'px';
+            document.body.style.height = vh + 'px';
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.documentElement.style.height = '';
+            document.body.style.height = '';
+        }
+    },
+
+    init() {
+        const run = function () { try { Layout.fit(); } catch (e) { console.warn('Layout.fit', e); } };
+        run();
+        Compat.on(window, 'resize', run);
+        Compat.on(window, 'orientationchange', function () {
+            setTimeout(run, 50);
+            setTimeout(run, 250);
+            setTimeout(run, 500);
+        });
+        if (window.visualViewport) {
+            Compat.on(window.visualViewport, 'resize', run);
+            Compat.on(window.visualViewport, 'scroll', run);
+        }
+        setTimeout(run, 100);
+        setTimeout(run, 600);
+    }
+};
 
 // ================================================================
 //  AUDIO SYSTEM (Procedural 8-bit sounds)
@@ -25,45 +244,67 @@ const SFX = (() => {
     let muted = false;
 
     function init() {
-        if (!audioCtx) {
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        try {
+            if (!audioCtx) {
+                const AC = window.AudioContext || window.webkitAudioContext || window.mozAudioContext;
+                if (!AC) return;
+                audioCtx = new AC();
+            }
+            if (audioCtx.state === 'suspended' || audioCtx.state === 'interrupted') {
+                const p = audioCtx.resume();
+                if (p && typeof p.catch === 'function') p.catch(function () {});
+            }
+        } catch (e) {
+            audioCtx = null;
         }
-        if (audioCtx.state === 'suspended') audioCtx.resume();
     }
 
     function tone(freq, type, dur, endFreq = null, vol = 0.08) {
         if (!audioCtx || muted) return;
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = type;
-        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-        if (endFreq) osc.frequency.exponentialRampToValueAtTime(endFreq, audioCtx.currentTime + dur);
-        gain.gain.setValueAtTime(vol, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start();
-        osc.stop(audioCtx.currentTime + dur);
+        try {
+            const t0 = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(Math.max(20, freq), t0);
+            if (endFreq && endFreq > 0) {
+                try {
+                    osc.frequency.exponentialRampToValueAtTime(Math.max(20, endFreq), t0 + dur);
+                } catch (_) {
+                    osc.frequency.linearRampToValueAtTime(Math.max(20, endFreq), t0 + dur);
+                }
+            }
+            // 不用 exponential→0（部分行動瀏覽器會 throw）
+            gain.gain.setValueAtTime(vol, t0);
+            gain.gain.linearRampToValueAtTime(0.0001, t0 + Math.max(0.01, dur));
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(t0);
+            osc.stop(t0 + dur + 0.02);
+        } catch (e) { /* 音效失敗不應中斷遊戲 */ }
     }
 
     function noise(dur, vol = 0.08) {
         if (!audioCtx || muted) return;
-        const bufSize = audioCtx.sampleRate * dur;
-        const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
-        const data = buf.getChannelData(0);
-        for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
-        const src = audioCtx.createBufferSource();
-        src.buffer = buf;
-        const gain = audioCtx.createGain();
-        gain.gain.setValueAtTime(vol, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
-        const filter = audioCtx.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.value = 800;
-        src.connect(filter);
-        filter.connect(gain);
-        gain.connect(audioCtx.destination);
-        src.start();
+        try {
+            const t0 = audioCtx.currentTime;
+            const bufSize = Math.max(1, Math.floor(audioCtx.sampleRate * dur));
+            const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+            const data = buf.getChannelData(0);
+            for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+            const src = audioCtx.createBufferSource();
+            src.buffer = buf;
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(vol, t0);
+            gain.gain.linearRampToValueAtTime(0.0001, t0 + Math.max(0.01, dur));
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 800;
+            src.connect(filter);
+            filter.connect(gain);
+            gain.connect(audioCtx.destination);
+            src.start(t0);
+        } catch (e) { /* ignore */ }
     }
 
     return {
@@ -197,7 +438,17 @@ const Assets = {
         }
     },
 
-    get(key) { return this.images[key]; }
+    get(key) {
+        const img = this.images[key];
+        if (!img) return null;
+        // Canvas 後備可直接用
+        if (img.tagName && String(img.tagName).toUpperCase() === 'CANVAS') return img;
+        // Firefox：未完成載入的圖不可 drawImage
+        if (typeof img.complete === 'boolean' && !img.complete) return null;
+        const nw = img.naturalWidth != null ? img.naturalWidth : img.width;
+        if (!nw) return null;
+        return img;
+    }
 };
 
 // ================================================================
@@ -312,20 +563,21 @@ const Input = {
 
     isHoldingJump() {
         return this.isDown('ArrowUp') || this.isDown('w') || this.isDown('W') ||
-            this.isDown(' ') || this.isDown('Space') ||
+            this.isDown(' ') || this.isDown('Space') || this.isDown('Spacebar') ||
             this.isCodeDown('ArrowUp') || this.isCodeDown('KeyW') || this.isCodeDown('Space') ||
             this._touchState.up || this._touchState.jumpHeld || this._auto.jumpHeld;
     },
 
     isRunning() {
-        // 觸控裝置預設奔跑，手遊操作更順暢
+        // 僅「以觸控為主」的裝置預設奔跑；桌面 Firefox/Safari 觸控筆電不強制
+        const touchRun = (typeof TouchUI !== 'undefined' && TouchUI.isActive() && Compat.isPrimarilyTouch());
         return this.isDown('Shift') || this.isCodeDown('ShiftLeft') || this.isCodeDown('ShiftRight') ||
-            this._auto.run || TouchUI.isActive();
+            this._auto.run || touchRun;
     },
 
     wantJump() {
         return this.isJustPressed('ArrowUp') || this.isJustPressed('w') || this.isJustPressed('W') ||
-            this.isJustPressed(' ') || this.isJustPressed('Space') ||
+            this.isJustPressed(' ') || this.isJustPressed('Space') || this.isJustPressed('Spacebar') ||
             this.isCodeJustPressed('ArrowUp') || this.isCodeJustPressed('KeyW') || this.isCodeJustPressed('Space') ||
             this._touchState.jump || this._auto.jump;
     },
@@ -366,20 +618,27 @@ const Input = {
 };
 
 // ================================================================
-//  TOUCH UI — 手機／平板虛擬按鍵（Pointer Events 多點觸控）
+//  TOUCH UI — 手機／平板虛擬按鍵
+//  以 touch 事件為主（iOS/Android 最穩），滑鼠為輔；避免 pointer+touch 雙重綁定互搶
 // ================================================================
 const TouchUI = {
+    _touchDevice: null,
+
+    /** 是否為觸控優先裝置（桌面滑鼠為主則 false，即使有觸控螢幕） */
+    isTouchDevice() {
+        if (this._touchDevice != null) return this._touchDevice;
+        this._touchDevice = Compat.isPrimarilyTouch();
+        return this._touchDevice;
+    },
+
     /** 是否顯示／使用虛擬鍵 */
     isActive() {
         const el = document.getElementById('touch-controls');
         if (!el) return false;
-        if (el.classList.contains('force-show')) return true;
-        try {
-            return window.matchMedia('(pointer: coarse)').matches ||
-                window.matchMedia('(max-width: 1024px)').matches;
-        } catch (_) {
-            return false;
-        }
+        if (el.classList.contains('force-show') && this.isTouchDevice()) return true;
+        // 桌面細指標：不啟用虛擬鍵（避免擋操作）
+        if (!this.isTouchDevice()) return false;
+        return true;
     },
 
     syncAutoButton() {
@@ -394,12 +653,96 @@ const TouchUI = {
         }
     },
 
+    /**
+     * 綁定按住型按鈕：以 touch identifier 支援多點觸控
+     * 不用 pointer + touch 混用（iOS 上 preventDefault 會讓另一套事件失效）
+     */
+    bindHold(el, onDown, onUp) {
+        if (!el) return;
+        const ids = new Set();
+
+        const press = (id) => {
+            if (ids.has(id)) return;
+            ids.add(id);
+            if (ids.size === 1) {
+                el.classList.add('pressed');
+                try { SFX.init(); } catch (_) {}
+                onDown();
+            }
+        };
+        const release = (id) => {
+            if (!ids.has(id)) return;
+            ids.delete(id);
+            if (ids.size === 0) {
+                el.classList.remove('pressed');
+                onUp();
+            }
+        };
+        const releaseAll = () => {
+            if (ids.size === 0) return;
+            ids.clear();
+            el.classList.remove('pressed');
+            onUp();
+        };
+
+        // —— Touch（手機主路徑）——
+        Compat.on(el, 'touchstart', (e) => {
+            if (e.cancelable) e.preventDefault();
+            e.stopPropagation();
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                press('t' + e.changedTouches[i].identifier);
+            }
+        }, { passive: false });
+
+        Compat.on(el, 'touchend', (e) => {
+            if (e.cancelable) e.preventDefault();
+            e.stopPropagation();
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                release('t' + e.changedTouches[i].identifier);
+            }
+        }, { passive: false });
+
+        Compat.on(el, 'touchcancel', (e) => {
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                release('t' + e.changedTouches[i].identifier);
+            }
+        }, { passive: true });
+
+        Compat.on(el, 'touchmove', (e) => {
+            if (e.cancelable) e.preventDefault();
+        }, { passive: false });
+
+        // —— Mouse（桌面）——
+        Compat.on(el, 'mousedown', (e) => {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            e.stopPropagation();
+            press('mouse');
+            const onMouseUp = () => {
+                release('mouse');
+                window.removeEventListener('mouseup', onMouseUp);
+            };
+            window.addEventListener('mouseup', onMouseUp);
+        });
+
+        Compat.on(document, 'visibilitychange', () => {
+            if (document.hidden) releaseAll();
+        });
+    },
+
     init() {
         const controls = document.getElementById('touch-controls');
         if (!controls) return;
 
-        // 粗指標或窄螢幕時強制顯示（桌面窄窗也方便測）
-        if (this.isActive()) controls.classList.add('force-show');
+        // 僅觸控優先裝置顯示虛擬鍵（桌面 Firefox/Safari 保持鍵盤）
+        if (this.isTouchDevice()) {
+            controls.classList.add('force-show');
+            controls.setAttribute('aria-hidden', 'false');
+        } else {
+            controls.classList.remove('force-show');
+            controls.style.display = 'none';
+            controls.setAttribute('aria-hidden', 'true');
+        }
 
         const holdMap = {
             'btn-left': 'left',
@@ -408,55 +751,15 @@ const TouchUI = {
             'btn-down': 'down'
         };
 
-        const bindHold = (el, onDown, onUp) => {
-            if (!el) return;
-            let activePointers = 0;
-            const down = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                try { el.setPointerCapture(e.pointerId); } catch (_) {}
-                activePointers++;
-                if (activePointers === 1) {
-                    el.classList.add('pressed');
-                    SFX.init();
-                    onDown();
-                }
-            };
-            const up = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                activePointers = Math.max(0, activePointers - 1);
-                if (activePointers === 0) {
-                    el.classList.remove('pressed');
-                    onUp();
-                }
-            };
-            el.addEventListener('pointerdown', down);
-            el.addEventListener('pointerup', up);
-            el.addEventListener('pointercancel', up);
-            el.addEventListener('lostpointercapture', () => {
-                if (activePointers > 0) {
-                    activePointers = 0;
-                    el.classList.remove('pressed');
-                    onUp();
-                }
-            });
-            // 阻擋舊版 touch 冒泡到 canvas
-            el.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); }, { passive: false });
-            el.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); }, { passive: false });
-        };
-
-        // 方向鍵：按住
         Object.keys(holdMap).forEach(id => {
             const key = holdMap[id];
-            bindHold(document.getElementById(id),
+            this.bindHold(document.getElementById(id),
                 () => { Input._touchState[key] = true; },
                 () => { Input._touchState[key] = false; }
             );
         });
 
-        // 跳躍：按下觸發 + 按住維持跳高
-        bindHold(document.getElementById('btn-jump'),
+        this.bindHold(document.getElementById('btn-jump'),
             () => {
                 Input._touchState.jump = true;
                 Input._touchState.jumpHeld = true;
@@ -464,8 +767,7 @@ const TouchUI = {
             () => { Input._touchState.jumpHeld = false; }
         );
 
-        // 攻擊／技能：按住可連發
-        bindHold(document.getElementById('btn-attack'),
+        this.bindHold(document.getElementById('btn-attack'),
             () => {
                 Input._touchState.attack = true;
                 Input._touchState.attackHeld = true;
@@ -473,7 +775,8 @@ const TouchUI = {
             },
             () => { Input._touchState.attackHeld = false; }
         );
-        bindHold(document.getElementById('btn-skill'),
+
+        this.bindHold(document.getElementById('btn-skill'),
             () => {
                 Input._touchState.special = true;
                 Input._touchState.specialHeld = true;
@@ -481,75 +784,164 @@ const TouchUI = {
             },
             () => { Input._touchState.specialHeld = false; }
         );
-        // 大絕：點一下
-        bindHold(document.getElementById('btn-ult'),
+
+        this.bindHold(document.getElementById('btn-ult'),
             () => { Input._touchState.ultimate = true; },
             () => {}
         );
 
-        // 掛機
-        bindHold(document.getElementById('btn-auto'),
+        this.bindHold(document.getElementById('btn-auto'),
             () => { Input._touchState.autoToggle = true; },
             () => {}
         );
 
-        // 點擊畫面（非虛擬鍵）→ 選單確認；不與方向鍵搶控制
+        // 點畫面開始／確認（避開虛擬鍵）
         const menuTap = (e) => {
-            // 若點在虛擬鍵上則略過
-            if (e.target && e.target.closest && e.target.closest('.dpad-btn, .action-btn, .util-btn')) return;
-            SFX.init();
+            if (domClosest(e.target, '.dpad-btn, .action-btn, .util-btn, #dpad, #action-buttons, #btn-auto')) {
+                return;
+            }
+            try { SFX.init(); } catch (err) {}
             Input._touchState.anyTap = true;
+            // 協助部分瀏覽器取得鍵盤焦點
+            try { if (gameCanvas && gameCanvas.focus) gameCanvas.focus(); } catch (err) {}
         };
-        gameCanvas.addEventListener('pointerdown', menuTap);
-        // 載入畫面／容器空白處也可點開始
-        const container = document.getElementById('game-container');
-        if (container) {
-            container.addEventListener('pointerdown', (e) => {
-                if (e.target === container || e.target === gameCanvas ||
-                    (e.target && e.target.id === 'loading-screen') ||
-                    (e.target && e.target.closest && e.target.closest('#loading-screen'))) {
-                    menuTap(e);
-                }
-            });
+
+        Compat.on(gameCanvas, 'mousedown', menuTap);
+        Compat.on(gameCanvas, 'click', menuTap);
+        if (this.isTouchDevice()) {
+            Compat.on(gameCanvas, 'touchstart', menuTap, { passive: true });
         }
 
-        // 防止整頁捲動／雙指縮放
-        document.addEventListener('touchmove', e => {
-            if (e.cancelable) e.preventDefault();
-        }, { passive: false });
-        document.addEventListener('gesturestart', e => e.preventDefault());
+        const container = document.getElementById('game-container');
+        if (container) {
+            Compat.on(container, 'click', (e) => {
+                if (domClosest(e.target, '.dpad-btn, .action-btn, .util-btn, #dpad, #action-buttons, #btn-auto')) return;
+                menuTap(e);
+            });
+            if (this.isTouchDevice()) {
+                Compat.on(container, 'touchstart', (e) => {
+                    if (domClosest(e.target, '.dpad-btn, .action-btn, .util-btn, #dpad, #action-buttons, #btn-auto')) return;
+                    menuTap(e);
+                }, { passive: true });
+            }
+        }
 
-        // 方向／尺寸變化時維持滿版
-        const fit = () => {
-            if (this.isActive()) {
-                const el = document.getElementById('touch-controls');
-                if (el) el.classList.add('force-show');
+        const loading = document.getElementById('loading-screen');
+        if (loading) {
+            Compat.on(loading, 'click', menuTap);
+            if (this.isTouchDevice()) {
+                Compat.on(loading, 'touchstart', menuTap, { passive: true });
+            }
+        }
+
+        // 觸控裝置才攔預設手勢（桌面 Firefox 勿全局 preventDefault）
+        if (this.isTouchDevice()) {
+            Compat.on(document, 'touchmove', (e) => {
+                if (e.cancelable && e.target && (e.target === document.body || e.target === document.documentElement ||
+                    domClosest(e.target, '#game-container'))) {
+                    e.preventDefault();
+                }
+            }, { passive: false });
+
+            Compat.on(document, 'gesturestart', (e) => { e.preventDefault(); }, { passive: false });
+            Compat.on(document, 'gesturechange', (e) => { e.preventDefault(); }, { passive: false });
+
+            let lastTouchEnd = 0;
+            Compat.on(document, 'touchend', (e) => {
+                const now = Date.now();
+                if (now - lastTouchEnd <= 300) {
+                    if (e.cancelable) e.preventDefault();
+                }
+                lastTouchEnd = now;
+            }, { passive: false });
+        }
+
+        const refresh = () => {
+            this._touchDevice = null; // 旋轉／視窗變化後重判
+            if (this.isTouchDevice()) {
+                controls.classList.add('force-show');
+                controls.style.display = '';
+                controls.setAttribute('aria-hidden', 'false');
+            } else {
+                controls.classList.remove('force-show');
+                controls.style.display = 'none';
+                controls.setAttribute('aria-hidden', 'true');
             }
             this.syncAutoButton();
+            if (typeof Layout !== 'undefined') Layout.fit();
         };
-        window.addEventListener('resize', fit);
-        window.addEventListener('orientationchange', () => setTimeout(fit, 100));
-        fit();
+        Compat.on(window, 'resize', refresh);
+        Compat.on(window, 'orientationchange', () => {
+            setTimeout(refresh, 100);
+            setTimeout(refresh, 400);
+        });
+        refresh();
     }
 };
 
-// Keyboard events (key + code for IME-safe controls)
-window.addEventListener('keydown', e => {
-    if (!Input.keys[e.key]) Input.justPressed[e.key] = true;
-    if (!Input.codes[e.code]) Input.justPressedCode[e.code] = true;
-    Input.keys[e.key] = true;
-    Input.codes[e.code] = true;
-    SFX.init();
-    // Don't block F5 / DevTools
-    if (!['F5', 'F12'].includes(e.key)) e.preventDefault();
+// Keyboard — 跨瀏覽器（含 Firefox Space / code）
+function normalizeKey(e) {
+    // 舊 Edge / 部分 Safari
+    if (e.key === 'Spacebar') return ' ';
+    if (e.key === 'Esc') return 'Escape';
+    return e.key;
+}
+function normalizeCode(e) {
+    if (e.code) return e.code;
+    // 極舊瀏覽器用 keyCode 對照
+    const map = {
+        37: 'ArrowLeft', 38: 'ArrowUp', 39: 'ArrowRight', 40: 'ArrowDown',
+        32: 'Space', 13: 'Enter', 16: 'ShiftLeft',
+        65: 'KeyA', 68: 'KeyD', 87: 'KeyW', 83: 'KeyS',
+        90: 'KeyZ', 74: 'KeyJ', 88: 'KeyX', 67: 'KeyC', 70: 'KeyF',
+        86: 'KeyV', 81: 'KeyQ', 82: 'KeyR', 85: 'KeyU',
+        72: 'KeyH', 80: 'KeyP'
+    };
+    return map[e.keyCode] || map[e.which] || '';
+}
+
+Compat.on(window, 'keydown', (e) => {
+    const key = normalizeKey(e);
+    const code = normalizeCode(e);
+    if (!Input.keys[key]) Input.justPressed[key] = true;
+    if (code && !Input.codes[code]) Input.justPressedCode[code] = true;
+    Input.keys[key] = true;
+    if (code) Input.codes[code] = true;
+    // 空白鍵也標 ' ' 與 Space
+    if (key === ' ' || code === 'Space') {
+        Input.keys[' '] = true;
+        Input.keys['Space'] = true;
+        Input.codes['Space'] = true;
+    }
+    try { SFX.init(); } catch (err) {}
+    // 只擋遊戲相關鍵，避免 Firefox 無法用 F5/Ctrl+L 等
+    const block = (
+        key === ' ' || key === 'ArrowUp' || key === 'ArrowDown' ||
+        key === 'ArrowLeft' || key === 'ArrowRight' ||
+        code === 'Space' || (code && code.indexOf('Arrow') === 0) ||
+        code === 'KeyW' || code === 'KeyA' || code === 'KeyS' || code === 'KeyD' ||
+        code === 'KeyZ' || code === 'KeyJ' || code === 'KeyX' || code === 'KeyC' ||
+        code === 'KeyF' || code === 'KeyV' || code === 'KeyQ' || code === 'KeyR' ||
+        code === 'KeyU' || code === 'KeyH' || code === 'KeyP' || code === 'ShiftLeft' ||
+        code === 'ShiftRight'
+    );
+    if (block && e.preventDefault) e.preventDefault();
 });
-window.addEventListener('keyup', e => {
-    Input.keys[e.key] = false;
-    Input.codes[e.code] = false;
+Compat.on(window, 'keyup', (e) => {
+    const key = normalizeKey(e);
+    const code = normalizeCode(e);
+    Input.keys[key] = false;
+    if (code) Input.codes[code] = false;
+    if (key === ' ' || code === 'Space') {
+        Input.keys[' '] = false;
+        Input.keys['Space'] = false;
+        Input.codes['Space'] = false;
+    }
 });
 
-// 手機虛擬鍵（Pointer Events）
+// 手機虛擬鍵 + 版面適配
 TouchUI.init();
+Layout.init();
 
 // ================================================================
 //  CAMERA
@@ -1161,7 +1553,7 @@ class Player {
         }
 
         if (img && img.width) {
-            context.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+            safeDrawImage(context, img, -drawW / 2, -drawH / 2, drawW, drawH);
         } else {
             context.fillStyle = '#f0f';
             context.fillRect(-this.w / 2, -this.h / 2, this.w, this.h);
@@ -1299,7 +1691,7 @@ class Enemy {
                 context.translate(this.x + this.w / 2, this.y + this.h / 2 + this.deathTimer * 0.5);
                 context.rotate(this.deathTimer * 0.05);
                 const img = Assets.get('enemy_hurt');
-                if (img) context.drawImage(img, -24, -24, 48, 48);
+                if (img) safeDrawImage(context, img, -24, -24, 48, 48);
                 context.restore();
                 context.globalAlpha = 1;
             }
@@ -1316,7 +1708,7 @@ class Enemy {
         else img = Assets.get(this.frame === 0 ? 'enemy_walk1' : 'enemy_walk2');
 
         const s = 44;
-        if (img) context.drawImage(img, -s / 2, -s / 2, s, s);
+        if (img) safeDrawImage(context, img, -s / 2, -s / 2, s, s);
         else { context.fillStyle = '#f80'; context.fillRect(-14, -14, 28, 28); }
 
         context.restore();
@@ -1479,7 +1871,7 @@ class Boss {
                 const pw = 200, ph = 270;
                 // Draw in screen space (before camera transform)
                 context.translate(Camera.x, 0);
-                context.drawImage(portrait, W / 2 - pw / 2, H / 2 - ph / 2 - 30, pw, ph);
+                safeDrawImage(context, portrait, W / 2 - pw / 2, H / 2 - ph / 2 - 30, pw, ph);
                 // Boss name
                 context.fillStyle = '#f44';
                 context.font = 'bold 28px "Noto Sans TC", sans-serif';
@@ -1518,7 +1910,7 @@ class Boss {
 
         const dw = 140, dh = 130;
         if (img && img.width) {
-            context.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+            safeDrawImage(context, img, -dw / 2, -dh / 2, dw, dh);
         } else {
             context.fillStyle = '#608';
             context.fillRect(-40, -45, 80, 90);
@@ -1650,7 +2042,7 @@ class Projectile {
         context.globalAlpha = 1;
 
         if (img && img.width) {
-            context.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+            safeDrawImage(context, img, -dw / 2, -dh / 2, dw, dh);
         } else {
             context.fillStyle = this.isPlayer ? '#4af' : '#c4f';
             context.beginPath();
@@ -1722,7 +2114,7 @@ class FishItem {
 
         const img = Assets.get('fish_r' + ((this.frame % 4) + 1));
         if (img && img.width) {
-            context.drawImage(img, this.x - 6, this.y - 8, 36, 24);
+            safeDrawImage(context, img, this.x - 6, this.y - 8, 36, 24);
         } else {
             context.fillStyle = '#4af';
             context.fillRect(this.x, this.y, 24, 14);
@@ -2313,7 +2705,7 @@ function drawHUD(player, level, levelNum) {
     // Fish counter
     const fishImg = Assets.get('fish_r1');
     if (fishImg && fishImg.width) {
-        ctx.drawImage(fishImg, 175, 8, 30, 20);
+        safeDrawImage(ctx, fishImg, 175, 8, 30, 20);
     } else {
         ctx.fillStyle = '#4af';
         ctx.fillRect(178, 12, 20, 12);
@@ -2522,8 +2914,8 @@ function drawBackground(bgKey, scrollX) {
     const bg = Assets.get(bgKey);
     if (bg && bg.width) {
         const px = (scrollX * 0.3) % W;
-        ctx.drawImage(bg, -px, 0, W, H);
-        ctx.drawImage(bg, -px + W, 0, W, H);
+        safeDrawImage(ctx, bg, -px, 0, W, H);
+        safeDrawImage(ctx, bg, -px + W, 0, W, H);
     } else {
         // Fallback gradient
         const grd = ctx.createLinearGradient(0, 0, 0, H);
@@ -2662,7 +3054,7 @@ const Game = {
             }
         );
 
-        requestAnimationFrame(this.loop.bind(this));
+        Compat.raf(this.loop.bind(this));
     },
 
     // ── State Changes ──
@@ -2917,7 +3309,7 @@ const Game = {
         // Background with castle
         const bg = Assets.get('castle');
         if (bg && bg.width) {
-            ctx.drawImage(bg, 0, 0, W, H);
+            safeDrawImage(ctx, bg, 0, 0, W, H);
         }
         // Dark overlay
         ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
@@ -2993,7 +3385,7 @@ const Game = {
         if (prolog && prolog.width) {
             // Pan based on step
             const panY = -50 + this.prologueStep * 15;
-            ctx.drawImage(prolog, 0, panY, W, H - panY + 50);
+            safeDrawImage(ctx, prolog, 0, panY, W, H - panY + 50);
         } else {
             ctx.fillStyle = '#111';
             ctx.fillRect(0, 0, W, H);
@@ -3197,18 +3589,30 @@ const Game = {
 
     // ── Game Loop ──
     loop(timestamp) {
-        deltaTime = timestamp - lastTime;
-        lastTime = timestamp;
+        try {
+            deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
 
-        // Cap delta to prevent spiral of death
-        if (deltaTime > 50) deltaTime = 50;
+            // Cap delta to prevent spiral of death
+            if (deltaTime > 50) deltaTime = 50;
 
-        this.update();
-        this.draw();
-        Input.reset();
-        requestAnimationFrame(this.loop.bind(this));
+            this.update();
+            this.draw();
+            Input.reset();
+        } catch (err) {
+            // 單幀錯誤不應讓整款遊戲在手機上卡死
+            console.error('Game frame error:', err);
+            try { Input.reset(); } catch (_) {}
+        }
+        Compat.raf(this.loop.bind(this));
     }
 };
 
 // ── Start! ──
-Game.init();
+try {
+    Game.init();
+} catch (err) {
+    console.error('Game.init failed:', err);
+    const t = document.getElementById('loading-text');
+    if (t) t.textContent = '載入失敗，請重新整理頁面';
+}

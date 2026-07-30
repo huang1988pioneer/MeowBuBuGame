@@ -37,6 +37,8 @@ http.createServer((req, res) => {
     });
     res.end(data);
   });
-}).listen(port, () => {
+}).listen(port, '0.0.0.0', () => {
+  // 綁 0.0.0.0 讓區網手機可用 http://電腦IP:5500 連線
   console.log(`MeowBuBuGame -> http://localhost:${port}`);
+  console.log(`Mobile (LAN)  -> http://<your-pc-ip>:${port}`);
 });
