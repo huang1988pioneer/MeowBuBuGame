@@ -208,7 +208,16 @@ const Input = {
     codes: {},
     justPressed: {},
     justPressedCode: {},
-    _touchState: { left: false, right: false, up: false, down: false, jump: false, attack: false, special: false, ultimate: false, anyTap: false },
+    _touchState: {
+        left: false, right: false, up: false, down: false,
+        jump: false, jumpHeld: false,
+        attack: false, attackHeld: false,
+        special: false, specialHeld: false,
+        ultimate: false,
+        autoToggle: false, anyTap: false,
+        // 按住連發計時（幀）
+        _atkCd: 0, _skillCd: 0
+    },
     // 自動掛機注入的虛擬輸入（每幀由 AutoPlay 寫入，玩家手動優先）
     _auto: { axisX: 0, axisY: 0, jump: false, jumpHeld: false, attack: false, special: false, ultimate: false, run: false },
 
@@ -220,8 +229,28 @@ const Input = {
         this._touchState.special = false;
         this._touchState.ultimate = false;
         this._touchState.jump = false;
-        // up/down held state cleared only on touchend of those buttons
-        // _auto 由 AutoPlay 每幀重設，此處不清除 jumpHeld（同一幀內 player 還要用）
+        this._touchState.autoToggle = false;
+        // 按住連發：攻擊／技能
+        if (this._touchState.attackHeld) {
+            if (this._touchState._atkCd > 0) this._touchState._atkCd--;
+            else {
+                this._touchState.attack = true;
+                this._touchState._atkCd = 14; // ~4 下/秒
+            }
+        } else {
+            this._touchState._atkCd = 0;
+        }
+        if (this._touchState.specialHeld) {
+            if (this._touchState._skillCd > 0) this._touchState._skillCd--;
+            else {
+                this._touchState.special = true;
+                this._touchState._skillCd = 20;
+            }
+        } else {
+            this._touchState._skillCd = 0;
+        }
+        // left/right/up/down/jumpHeld 在 pointerup 清除
+        // _auto 由 AutoPlay 每幀重設
     },
 
     clearAuto() {
@@ -285,11 +314,13 @@ const Input = {
         return this.isDown('ArrowUp') || this.isDown('w') || this.isDown('W') ||
             this.isDown(' ') || this.isDown('Space') ||
             this.isCodeDown('ArrowUp') || this.isCodeDown('KeyW') || this.isCodeDown('Space') ||
-            this._touchState.up || this._auto.jumpHeld;
+            this._touchState.up || this._touchState.jumpHeld || this._auto.jumpHeld;
     },
 
     isRunning() {
-        return this.isDown('Shift') || this.isCodeDown('ShiftLeft') || this.isCodeDown('ShiftRight') || this._auto.run;
+        // 觸控裝置預設奔跑，手遊操作更順暢
+        return this.isDown('Shift') || this.isCodeDown('ShiftLeft') || this.isCodeDown('ShiftRight') ||
+            this._auto.run || TouchUI.isActive();
     },
 
     wantJump() {
@@ -326,10 +357,179 @@ const Input = {
     wantStart() {
         return this.isJustPressed('Enter') || this.isCodeJustPressed('Enter') || this._touchState.anyTap;
     },
-    /** 掛機模式切換：H / P */
+    /** 掛機模式切換：H / P / 手機「掛機」鈕 */
     wantAutoToggle() {
         return this.isJustPressed('h') || this.isJustPressed('H') || this.isCodeJustPressed('KeyH') ||
-            this.isJustPressed('p') || this.isJustPressed('P') || this.isCodeJustPressed('KeyP');
+            this.isJustPressed('p') || this.isJustPressed('P') || this.isCodeJustPressed('KeyP') ||
+            this._touchState.autoToggle;
+    }
+};
+
+// ================================================================
+//  TOUCH UI — 手機／平板虛擬按鍵（Pointer Events 多點觸控）
+// ================================================================
+const TouchUI = {
+    /** 是否顯示／使用虛擬鍵 */
+    isActive() {
+        const el = document.getElementById('touch-controls');
+        if (!el) return false;
+        if (el.classList.contains('force-show')) return true;
+        try {
+            return window.matchMedia('(pointer: coarse)').matches ||
+                window.matchMedia('(max-width: 1024px)').matches;
+        } catch (_) {
+            return false;
+        }
+    },
+
+    syncAutoButton() {
+        const btn = document.getElementById('btn-auto');
+        if (!btn) return;
+        if (typeof AutoPlay !== 'undefined' && AutoPlay.enabled) {
+            btn.classList.add('active');
+            btn.textContent = '掛機中';
+        } else {
+            btn.classList.remove('active');
+            btn.textContent = '掛機';
+        }
+    },
+
+    init() {
+        const controls = document.getElementById('touch-controls');
+        if (!controls) return;
+
+        // 粗指標或窄螢幕時強制顯示（桌面窄窗也方便測）
+        if (this.isActive()) controls.classList.add('force-show');
+
+        const holdMap = {
+            'btn-left': 'left',
+            'btn-right': 'right',
+            'btn-up': 'up',
+            'btn-down': 'down'
+        };
+
+        const bindHold = (el, onDown, onUp) => {
+            if (!el) return;
+            let activePointers = 0;
+            const down = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                try { el.setPointerCapture(e.pointerId); } catch (_) {}
+                activePointers++;
+                if (activePointers === 1) {
+                    el.classList.add('pressed');
+                    SFX.init();
+                    onDown();
+                }
+            };
+            const up = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                activePointers = Math.max(0, activePointers - 1);
+                if (activePointers === 0) {
+                    el.classList.remove('pressed');
+                    onUp();
+                }
+            };
+            el.addEventListener('pointerdown', down);
+            el.addEventListener('pointerup', up);
+            el.addEventListener('pointercancel', up);
+            el.addEventListener('lostpointercapture', () => {
+                if (activePointers > 0) {
+                    activePointers = 0;
+                    el.classList.remove('pressed');
+                    onUp();
+                }
+            });
+            // 阻擋舊版 touch 冒泡到 canvas
+            el.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); }, { passive: false });
+            el.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); }, { passive: false });
+        };
+
+        // 方向鍵：按住
+        Object.keys(holdMap).forEach(id => {
+            const key = holdMap[id];
+            bindHold(document.getElementById(id),
+                () => { Input._touchState[key] = true; },
+                () => { Input._touchState[key] = false; }
+            );
+        });
+
+        // 跳躍：按下觸發 + 按住維持跳高
+        bindHold(document.getElementById('btn-jump'),
+            () => {
+                Input._touchState.jump = true;
+                Input._touchState.jumpHeld = true;
+            },
+            () => { Input._touchState.jumpHeld = false; }
+        );
+
+        // 攻擊／技能：按住可連發
+        bindHold(document.getElementById('btn-attack'),
+            () => {
+                Input._touchState.attack = true;
+                Input._touchState.attackHeld = true;
+                Input._touchState._atkCd = 14;
+            },
+            () => { Input._touchState.attackHeld = false; }
+        );
+        bindHold(document.getElementById('btn-skill'),
+            () => {
+                Input._touchState.special = true;
+                Input._touchState.specialHeld = true;
+                Input._touchState._skillCd = 20;
+            },
+            () => { Input._touchState.specialHeld = false; }
+        );
+        // 大絕：點一下
+        bindHold(document.getElementById('btn-ult'),
+            () => { Input._touchState.ultimate = true; },
+            () => {}
+        );
+
+        // 掛機
+        bindHold(document.getElementById('btn-auto'),
+            () => { Input._touchState.autoToggle = true; },
+            () => {}
+        );
+
+        // 點擊畫面（非虛擬鍵）→ 選單確認；不與方向鍵搶控制
+        const menuTap = (e) => {
+            // 若點在虛擬鍵上則略過
+            if (e.target && e.target.closest && e.target.closest('.dpad-btn, .action-btn, .util-btn')) return;
+            SFX.init();
+            Input._touchState.anyTap = true;
+        };
+        gameCanvas.addEventListener('pointerdown', menuTap);
+        // 載入畫面／容器空白處也可點開始
+        const container = document.getElementById('game-container');
+        if (container) {
+            container.addEventListener('pointerdown', (e) => {
+                if (e.target === container || e.target === gameCanvas ||
+                    (e.target && e.target.id === 'loading-screen') ||
+                    (e.target && e.target.closest && e.target.closest('#loading-screen'))) {
+                    menuTap(e);
+                }
+            });
+        }
+
+        // 防止整頁捲動／雙指縮放
+        document.addEventListener('touchmove', e => {
+            if (e.cancelable) e.preventDefault();
+        }, { passive: false });
+        document.addEventListener('gesturestart', e => e.preventDefault());
+
+        // 方向／尺寸變化時維持滿版
+        const fit = () => {
+            if (this.isActive()) {
+                const el = document.getElementById('touch-controls');
+                if (el) el.classList.add('force-show');
+            }
+            this.syncAutoButton();
+        };
+        window.addEventListener('resize', fit);
+        window.addEventListener('orientationchange', () => setTimeout(fit, 100));
+        fit();
     }
 };
 
@@ -348,45 +548,8 @@ window.addEventListener('keyup', e => {
     Input.codes[e.code] = false;
 });
 
-// Touch events on canvas
-gameCanvas.addEventListener('touchstart', onTouch, { passive: false });
-gameCanvas.addEventListener('touchmove', onTouch, { passive: false });
-gameCanvas.addEventListener('touchend', onTouchEnd, { passive: false });
-// Also listen on the touch control buttons
-document.querySelectorAll('.dpad-btn, .action-btn').forEach(btn => {
-    btn.addEventListener('touchstart', e => { e.preventDefault(); SFX.init(); handleButtonTouch(btn, true); });
-    btn.addEventListener('touchend', e => { e.preventDefault(); handleButtonTouch(btn, false); });
-});
-
-function handleButtonTouch(btn, pressed) {
-    const id = btn.id;
-    if (id === 'btn-left') Input._touchState.left = pressed;
-    else if (id === 'btn-right') Input._touchState.right = pressed;
-    else if (id === 'btn-up') Input._touchState.up = pressed;
-    else if (id === 'btn-down') Input._touchState.down = pressed;
-    else if (id === 'btn-jump' && pressed) Input._touchState.jump = true;
-    else if (id === 'btn-attack' && pressed) Input._touchState.attack = true;
-    else if (id === 'btn-skill' && pressed) Input._touchState.special = true;
-    else if (id === 'btn-ult' && pressed) Input._touchState.ultimate = true;
-}
-
-function onTouch(e) {
-    e.preventDefault();
-    SFX.init();
-    Input._touchState.anyTap = true;
-    // Simple half-screen left/right detection
-    const rect = gameCanvas.getBoundingClientRect();
-    for (let i = 0; i < e.touches.length; i++) {
-        const tx = (e.touches[i].clientX - rect.left) / rect.width;
-        if (tx < 0.3) Input._touchState.left = true;
-        else if (tx > 0.7) Input._touchState.right = true;
-    }
-}
-function onTouchEnd(e) {
-    e.preventDefault();
-    Input._touchState.left = false;
-    Input._touchState.right = false;
-}
+// 手機虛擬鍵（Pointer Events）
+TouchUI.init();
 
 // ================================================================
 //  CAMERA
@@ -1710,6 +1873,7 @@ const AutoPlay = {
         this.retreatFrames = 0;
         this.lastX = 0;
         if (!this.enabled) Input.clearAuto();
+        if (typeof TouchUI !== 'undefined') TouchUI.syncAutoButton();
         if (announce) {
             this.statusText = this.enabled ? '自動掛機 ON' : '自動掛機 OFF';
             this.statusTimer = 100;
@@ -1721,6 +1885,7 @@ const AutoPlay = {
 
     toggle() {
         this.setEnabled(!this.enabled, true);
+        if (typeof TouchUI !== 'undefined') TouchUI.syncAutoButton();
     },
 
     /**
@@ -2794,19 +2959,30 @@ const Game = {
         if (Math.floor(this.titleTimer / 30) % 2 === 0) {
             ctx.font = '14px "Press Start 2P", cursive';
             ctx.fillStyle = '#fff';
-            ctx.fillText('PRESS ENTER OR TAP TO START', W / 2, 400);
+            const startHint = TouchUI.isActive()
+                ? '點螢幕開始'
+                : 'PRESS ENTER OR TAP TO START';
+            ctx.fillText(startHint, W / 2, 400);
         }
 
         // Auto-play option
         ctx.font = '13px "Noto Sans TC", sans-serif';
         ctx.fillStyle = Math.floor(this.titleTimer / 40) % 2 === 0 ? '#8f8' : '#5a5';
-        ctx.fillText('按 H 或 P 啟動自動掛機模式', W / 2, 435);
+        ctx.fillText(
+            TouchUI.isActive() ? '點右上「掛機」可自動遊玩' : '按 H 或 P 啟動自動掛機模式',
+            W / 2, 435
+        );
 
         // Instructions
         ctx.font = '11px "Noto Sans TC", sans-serif';
         ctx.fillStyle = '#888';
-        ctx.fillText('X 技能可配合 ↑↓←→ 八向射擊 ｜ Z 攻擊 ｜ V 大絕 ｜ 空白跳躍', W / 2, 470);
-        ctx.fillText('遊戲中按 H / P 可開關掛機  ·  Hold ↑↓←→ + X 瞄準技能', W / 2, 490);
+        if (TouchUI.isActive()) {
+            ctx.fillText('左：方向 ｜ 右：跳／攻／技能／大絕 ｜ 建議橫持手機', W / 2, 470);
+            ctx.fillText('長按「跳」可跳更高  ·  方向＋技能可八向射擊', W / 2, 490);
+        } else {
+            ctx.fillText('X 技能可配合 ↑↓←→ 八向射擊 ｜ Z 攻擊 ｜ V 大絕 ｜ 空白跳躍', W / 2, 470);
+            ctx.fillText('遊戲中按 H / P 可開關掛機  ·  Hold ↑↓←→ + X 瞄準技能', W / 2, 490);
+        }
 
         ctx.textAlign = 'left';
     },
@@ -2969,6 +3145,8 @@ const Game = {
             ctx.fillStyle = '#aaa';
             if (AutoPlay.enabled) {
                 ctx.fillText('AUTO RESTART...', W / 2, 460);
+            } else if (TouchUI.isActive()) {
+                ctx.fillText('點螢幕回標題  ·  掛機再戰', W / 2, 460);
             } else {
                 ctx.fillText('ENTER 回標題  ·  H 掛機再戰', W / 2, 460);
             }
@@ -3007,6 +3185,8 @@ const Game = {
             ctx.fillStyle = '#888';
             if (AutoPlay.enabled) {
                 ctx.fillText('AUTO RESTART...', W / 2, 440);
+            } else if (TouchUI.isActive()) {
+                ctx.fillText('點螢幕回標題  ·  掛機再戰', W / 2, 440);
             } else {
                 ctx.fillText('ENTER 回標題  ·  H 掛機再戰', W / 2, 440);
             }

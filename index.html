@@ -2,9 +2,14 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="description" content="喵布布的復仇 - 一款像素風動作平台遊戲。喵布布的魚被偷了，展開一連串復仇之旅！">
     <meta name="keywords" content="喵布布的復仇, MeowBuBu's Revenge, 像素遊戲, 動作平台, HTML5 Game">
+    <meta name="theme-color" content="#08080e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="format-detection" content="telephone=no">
     <title>喵布布的復仇 | MeowBuBu's Revenge</title>
 
     <!-- Google Fonts -->
@@ -29,27 +34,42 @@
                 <div id="loading-bar"></div>
             </div>
             <p id="loading-text">Loading Assets... 0%</p>
+            <p class="loading-hint">手機請橫持螢幕 · 左右虛擬鍵操作</p>
         </div>
 
         <!-- Game Canvas -->
         <canvas id="game-canvas" width="960" height="540"></canvas>
 
         <!-- Mobile Touch Controls -->
-        <div id="touch-controls">
+        <div id="touch-controls" aria-hidden="true">
+            <!-- Left: D-pad -->
             <div id="dpad">
-                <div class="dpad-btn" id="btn-up" data-dir="up">▲</div>
+                <div class="dpad-btn" id="btn-up" data-dir="up" role="button" aria-label="上">▲</div>
                 <div class="dpad-row">
-                    <div class="dpad-btn" id="btn-left" data-dir="left">◀</div>
-                    <div class="dpad-btn" id="btn-down" data-dir="down">▼</div>
-                    <div class="dpad-btn" id="btn-right" data-dir="right">▶</div>
+                    <div class="dpad-btn" id="btn-left" data-dir="left" role="button" aria-label="左">◀</div>
+                    <div class="dpad-btn" id="btn-down" data-dir="down" role="button" aria-label="下">▼</div>
+                    <div class="dpad-btn" id="btn-right" data-dir="right" role="button" aria-label="右">▶</div>
                 </div>
             </div>
+
+            <!-- Right: actions -->
             <div id="action-buttons">
-                <div class="action-btn" id="btn-ult">ULT</div>
-                <div class="action-btn" id="btn-skill">SKILL</div>
-                <div class="action-btn" id="btn-jump">JUMP</div>
-                <div class="action-btn" id="btn-attack">ATK</div>
+                <div class="action-btn action-ult" id="btn-ult" role="button" aria-label="大絕">
+                    <span class="btn-label">大絕</span>
+                </div>
+                <div class="action-btn action-skill" id="btn-skill" role="button" aria-label="技能">
+                    <span class="btn-label">技能</span>
+                </div>
+                <div class="action-btn action-jump" id="btn-jump" role="button" aria-label="跳躍">
+                    <span class="btn-label">跳</span>
+                </div>
+                <div class="action-btn action-attack" id="btn-attack" role="button" aria-label="攻擊">
+                    <span class="btn-label">攻</span>
+                </div>
             </div>
+
+            <!-- Utility: auto AFK -->
+            <button type="button" id="btn-auto" class="util-btn" aria-label="自動掛機">掛機</button>
         </div>
     </div>
 
