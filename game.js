@@ -644,7 +644,14 @@ const TouchUI = {
     syncAutoButton() {
         const btn = document.getElementById('btn-auto');
         if (!btn) return;
-        if (typeof AutoPlay !== 'undefined' && AutoPlay.enabled) {
+        // const AutoPlay 在 TDZ 時 typeof 仍會 throw，必須 try/catch
+        let on = false;
+        try {
+            on = !!(typeof AutoPlay !== 'undefined' && AutoPlay && AutoPlay.enabled);
+        } catch (e) {
+            on = false;
+        }
+        if (on) {
             btn.classList.add('active');
             btn.textContent = '掛機中';
         } else {
@@ -939,9 +946,7 @@ Compat.on(window, 'keyup', (e) => {
     }
 });
 
-// 手機虛擬鍵 + 版面適配
-TouchUI.init();
-Layout.init();
+// TouchUI / Layout 延後到 AutoPlay 宣告後再 init（避免 const TDZ）
 
 // ================================================================
 //  CAMERA
@@ -2564,6 +2569,10 @@ const AutoPlay = {
         }
     }
 };
+
+// 在 AutoPlay 宣告完成後再 init，避免 const TDZ 造成 ReferenceError
+TouchUI.init();
+Layout.init();
 
 // ================================================================
 //  LEVEL GENERATOR
