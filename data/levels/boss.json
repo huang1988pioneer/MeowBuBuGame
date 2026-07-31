@@ -1,0 +1,29 @@
+{
+  "id": "boss",
+  "name": "Boss 戰",
+  "width": 960,
+  "groundY": 490,
+  "bg": "boss",
+  "type": "boss",
+  "playerSpawn": {
+    "x": 80,
+    "y": 400
+  },
+  "platforms": [
+    { "x": 0, "y": 490, "w": 960, "h": 80, "oneWay": false },
+    { "x": 180, "y": 390, "w": 160, "h": 16, "oneWay": true },
+    { "x": 620, "y": 370, "w": 160, "h": 16, "oneWay": true },
+    { "x": 400, "y": 310, "w": 130, "h": 16, "oneWay": true }
+  ],
+  "enemies": [],
+  "fish": [],
+  "hearts": [
+    { "x": 220, "y": 350, "heal": 1 },
+    { "x": 680, "y": 330, "heal": 1 },
+    { "x": 430, "y": 270, "heal": 2 }
+  ],
+  "boss": {
+    "x": 710,
+    "y": 390
+  }
+}

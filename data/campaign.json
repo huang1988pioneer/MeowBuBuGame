@@ -1,0 +1,21 @@
+{
+  "name": "喵布布的復仇",
+  "prologue": "prologue",
+  "stages": [
+    {
+      "levelId": "level1",
+      "state": "LEVEL1",
+      "label": "森林"
+    },
+    {
+      "levelId": "level2",
+      "state": "LEVEL2",
+      "label": "城堡"
+    },
+    {
+      "levelId": "boss",
+      "state": "BOSS",
+      "label": "Boss 戰"
+    }
+  ]
+}

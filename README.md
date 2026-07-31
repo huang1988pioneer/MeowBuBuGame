@@ -54,4 +54,15 @@ node server.js
 
 - 純 HTML5 Canvas + JavaScript（無框架）
 - 素材位於 `assets/sprites`、`assets/bg`
+- 關卡資料：`data/`（JSON，可由編輯器匯出）
 - 瀏覽器：Chrome、Firefox、Safari、Edge（桌面與行動）
+
+## 關卡／戰役編輯器（Avalonia UI）
+
+桌面編輯器用來編輯關卡地圖、戰役順序與序章對白，匯出到 `data/` 後遊戲會自動載入。
+
+```bash
+dotnet run --project editor/MeowBuBu.Editor
+```
+
+詳見 [editor/README.md](editor/README.md)。

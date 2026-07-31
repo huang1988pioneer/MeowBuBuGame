@@ -367,6 +367,14 @@ const Assets = {
         'prologue':   'assets/bg/prologue.png',
         'forest':     'assets/bg/forest.png',
         'castle':     'assets/bg/castle.png',
+        'world1':     'assets/bg/world1.png',
+        'world2':     'assets/bg/world2.png',
+        'world3':     'assets/bg/world3.png',
+        'world4':     'assets/bg/world4.png',
+        'world5':     'assets/bg/world5.png',
+        'world6':     'assets/bg/world6.png',
+        'world7':     'assets/bg/world7.png',
+        'world8':     'assets/bg/world8.png',
         // Hero sprites (individual frames)
         'hero_idle':    'assets/sprites/hero_idle.png',
         'hero_walk1':   'assets/sprites/hero_walk1.png',
@@ -2696,6 +2704,175 @@ TouchUI.init();
 Layout.init();
 
 // ================================================================
+//  CAMPAIGN / LEVEL DATA (Avalonia 編輯器匯出的 data/*.json)
+//  有資料時優先使用；載入失敗則回退程序化 generateLevel
+// ================================================================
+const CampaignData = {
+    loaded: false,
+    campaign: null,
+    levels: Object.create(null),
+    scenes: Object.create(null),
+
+    /** @returns {Promise<void>} */
+    async load() {
+        try {
+            const campRes = await fetch('data/campaign.json', { cache: 'no-store' });
+            if (!campRes.ok) throw new Error('campaign.json ' + campRes.status);
+            this.campaign = await campRes.json();
+
+            const stages = (this.campaign && this.campaign.stages) || [];
+            for (let i = 0; i < stages.length; i++) {
+                const id = stages[i].levelId;
+                if (!id || this.levels[id]) continue;
+                try {
+                    const lr = await fetch('data/levels/' + id + '.json', { cache: 'no-store' });
+                    if (lr.ok) this.levels[id] = await lr.json();
+                } catch (e) { /* skip missing level */ }
+            }
+
+            // 保險：常見檔名
+            const fallbackIds = ['level1', 'level2', 'boss'];
+            for (let i = 0; i < fallbackIds.length; i++) {
+                const id = fallbackIds[i];
+                if (this.levels[id]) continue;
+                try {
+                    const lr = await fetch('data/levels/' + id + '.json', { cache: 'no-store' });
+                    if (lr.ok) this.levels[id] = await lr.json();
+                } catch (e) { /* ignore */ }
+            }
+
+            const prologueId = (this.campaign && this.campaign.prologue) || 'prologue';
+            try {
+                const sr = await fetch('data/scenes/' + prologueId + '.json', { cache: 'no-store' });
+                if (sr.ok) this.scenes[prologueId] = await sr.json();
+            } catch (e) { /* ignore */ }
+
+            this.loaded = true;
+            console.log('[CampaignData] loaded', Object.keys(this.levels).length, 'levels');
+        } catch (err) {
+            console.warn('[CampaignData] load failed, using procedural levels', err);
+            this.loaded = false;
+            this.campaign = null;
+        }
+    },
+
+    getLevelByState(stateName) {
+        if (!this.campaign || !this.campaign.stages) return null;
+        for (let i = 0; i < this.campaign.stages.length; i++) {
+            const s = this.campaign.stages[i];
+            if (s.state === stateName) return this.levels[s.levelId] || null;
+        }
+        return null;
+    },
+
+    getPrologueTexts() {
+        const id = (this.campaign && this.campaign.prologue) || 'prologue';
+        const scene = this.scenes[id];
+        if (scene && scene.texts && scene.texts.length) return scene.texts.slice();
+        return null;
+    }
+};
+
+/**
+ * 由編輯器 JSON 建立可遊玩關卡物件
+ * @param {object} data LevelDto
+ */
+function buildLevelFromData(data) {
+    if (!data) return null;
+    const gy = data.groundY != null ? data.groundY : 490;
+    const level = {
+        platforms: [],
+        enemies: [],
+        projectiles: [],
+        fish: [],
+        hearts: [],
+        w: data.width || 2800,
+        boss: null,
+        bg: data.bg || 'forest',
+        groundY: gy,
+        playerSpawn: data.playerSpawn
+            ? { x: data.playerSpawn.x, y: data.playerSpawn.y }
+            : { x: 80, y: 400 },
+        fromEditor: true
+    };
+
+    const plats = data.platforms || [];
+    for (let i = 0; i < plats.length; i++) {
+        const p = plats[i];
+        level.platforms.push({
+            x: p.x, y: p.y, w: p.w, h: p.h,
+            oneWay: !!p.oneWay
+        });
+    }
+
+    // 若編輯資料沒有地面，補一條
+    if (!level.platforms.some(function (p) { return !p.oneWay; })) {
+        level.platforms.unshift({ x: 0, y: gy, w: level.w, h: 80, oneWay: false });
+    }
+
+    const enemies = data.enemies || [];
+    for (let i = 0; i < enemies.length; i++) {
+        level.enemies.push(new Enemy(enemies[i].x, enemies[i].y));
+    }
+
+    const fish = data.fish || [];
+    for (let i = 0; i < fish.length; i++) {
+        level.fish.push(new FishItem(fish[i].x, fish[i].y));
+    }
+
+    const hearts = data.hearts || [];
+    for (let i = 0; i < hearts.length; i++) {
+        const h = hearts[i];
+        level.hearts.push(new HeartItem(h.x, h.y, h.heal != null ? h.heal : 1, true));
+    }
+
+    if (data.boss) {
+        level.boss = new Boss(data.boss.x, data.boss.y);
+    } else if (data.type === 'boss') {
+        level.boss = new Boss(level.w - 250, gy - 100);
+    }
+
+    return level;
+}
+
+/**
+ * 依狀態取得關卡：優先 JSON，否則程序化
+ * @param {string} stateName LEVEL1 | LEVEL2 | BOSS
+ * @param {{width:number,type:string,bg:string,groundY:number}} fallbackConfig
+ */
+function loadLevelForState(stateName, fallbackConfig) {
+    const data = CampaignData.getLevelByState(stateName);
+    if (data) {
+        const built = buildLevelFromData(data);
+        if (built) return built;
+    }
+    // 依 levelId 直接嘗試
+    const map = { LEVEL1: 'level1', LEVEL2: 'level2', BOSS: 'boss' };
+    const id = map[stateName];
+    if (id && CampaignData.levels[id]) {
+        const built = buildLevelFromData(CampaignData.levels[id]);
+        if (built) return built;
+    }
+    return generateLevel(fallbackConfig);
+}
+
+function createCampaignLevel(stageIndex) {
+    const world = Math.floor(stageIndex / 4) + 1;
+    const chapterLevel = (stageIndex % 4) + 1;
+    const isBoss = chapterLevel === 4;
+    const level = generateLevel({
+        width: isBoss ? 1200 : 2400 + world * 160 + chapterLevel * 90,
+        type: isBoss ? 'boss' : 'normal',
+        bg: 'world' + world,
+        groundY: 490
+    });
+    level.chapter = world;
+    level.chapterLevel = chapterLevel;
+    level.isFinalBoss = world === 8 && isBoss;
+    return level;
+}
+
+// ================================================================
 //  LEVEL GENERATOR
 // ================================================================
 function generateLevel(config) {
@@ -2858,7 +3035,11 @@ function drawHUD(player, level, levelNum) {
     ctx.fillStyle = '#888';
     ctx.font = '10px "Press Start 2P", monospace';
     ctx.textAlign = 'center';
-    const levelLabel = levelNum === 3 ? 'BOSS' : `STAGE ${levelNum}`;
+    const chapter = Math.floor((levelNum - 1) / 4) + 1;
+    const chapterLevel = ((levelNum - 1) % 4) + 1;
+    const levelLabel = chapterLevel === 4
+        ? `WORLD ${chapter}-${chapterLevel}  BOSS`
+        : `WORLD ${chapter}-${chapterLevel}`;
     ctx.fillText(levelLabel, W / 2, 18);
     ctx.textAlign = 'left';
 
@@ -3145,6 +3326,7 @@ const Game = {
     player: null,
     level: null,
     levelNum: 0,
+    stageIndex: 0,
 
     // Title
     titleTimer: 0,
@@ -3170,6 +3352,9 @@ const Game = {
         const loadingText = document.getElementById('loading-text');
         const loadingScreen = document.getElementById('loading-screen');
 
+        // 並行：素材 + 戰役/關卡 JSON（Avalonia 編輯器）
+        const dataReady = CampaignData.load();
+
         Assets.load(
             progress => {
                 const pct = Math.floor(progress * 100);
@@ -3177,10 +3362,21 @@ const Game = {
                 if (loadingText) loadingText.textContent = `Loading Assets... ${pct}%`;
             },
             () => {
-                setTimeout(() => {
-                    if (loadingScreen) loadingScreen.classList.remove('active');
-                    this.changeState('TITLE');
-                }, 400);
+                dataReady.then(() => {
+                    // 套用序章對白（若有編輯器資料）
+                    const texts = CampaignData.getPrologueTexts();
+                    if (texts && texts.length) this.prologueTexts = texts;
+
+                    setTimeout(() => {
+                        if (loadingScreen) loadingScreen.classList.remove('active');
+                        this.changeState('TITLE');
+                    }, 400);
+                }).catch(() => {
+                    setTimeout(() => {
+                        if (loadingScreen) loadingScreen.classList.remove('active');
+                        this.changeState('TITLE');
+                    }, 400);
+                });
             }
         );
 
@@ -3204,35 +3400,67 @@ const Game = {
                 SFX.stopBGM();
                 break;
 
-            case 'LEVEL1':
-                this.player = new Player(80, 400);
+            case 'LEVEL': {
+                this.level = createCampaignLevel(this.stageIndex);
+                const spawn = this.level.playerSpawn || { x: 80, y: 400 };
+                if (this.player) {
+                    this.player.x = spawn.x;
+                    this.player.y = spawn.y;
+                } else {
+                    this.player = new Player(spawn.x, spawn.y);
+                }
+                this.player.grantIFrames(I_FRAMES_SPAWN);
+                this.levelNum = this.stageIndex + 1;
+                if (this.level.boss) {
+                    SFX.stopBGM();
+                    setTimeout(() => SFX.playBossBGM(), 400);
+                } else {
+                    SFX.playBGM();
+                }
+                break;
+            }
+
+            case 'LEVEL1': {
+                this.level = loadLevelForState('LEVEL1', {
+                    width: 2800, type: 'normal', bg: 'forest', groundY: 490
+                });
+                const spawn1 = (this.level && this.level.playerSpawn) || { x: 80, y: 400 };
+                this.player = new Player(spawn1.x, spawn1.y);
                 this.player.grantIFrames(I_FRAMES_SPAWN); // 進關無敵保護
-                this.level = generateLevel({ width: 2800, type: 'normal', bg: 'forest', groundY: 490 });
                 this.levelNum = 1;
                 SFX.playBGM();
                 break;
+            }
 
-            case 'LEVEL2':
+            case 'LEVEL2': {
+                this.level = loadLevelForState('LEVEL2', {
+                    width: 3500, type: 'normal', bg: 'castle', groundY: 490
+                });
+                const spawn2 = (this.level && this.level.playerSpawn) || { x: 80, y: 400 };
                 if (this.player) {
-                    this.player.x = 80;
-                    this.player.y = 400;
+                    this.player.x = spawn2.x;
+                    this.player.y = spawn2.y;
                     this.player.grantIFrames(I_FRAMES_SPAWN);
                 }
-                this.level = generateLevel({ width: 3500, type: 'normal', bg: 'castle', groundY: 490 });
                 this.levelNum = 2;
                 break;
+            }
 
-            case 'BOSS':
+            case 'BOSS': {
+                this.level = loadLevelForState('BOSS', {
+                    width: 960, type: 'boss', bg: 'boss', groundY: 490
+                });
+                const spawn3 = (this.level && this.level.playerSpawn) || { x: 80, y: 400 };
                 if (this.player) {
-                    this.player.x = 80;
-                    this.player.y = 400;
+                    this.player.x = spawn3.x;
+                    this.player.y = spawn3.y;
                     this.player.grantIFrames(I_FRAMES_SPAWN);
                 }
-                this.level = generateLevel({ width: 960, type: 'boss', bg: 'boss', groundY: 490 });
                 this.levelNum = 3;
                 SFX.stopBGM();
                 setTimeout(() => SFX.playBossBGM(), 2000);
                 break;
+            }
 
             case 'VICTORY':
                 this.resultTimer = 0;
@@ -3270,7 +3498,8 @@ const Game = {
                 if (Input.wantAutoToggle()) {
                     AutoPlay.setEnabled(true, true);
                     AutoPlay.loopCount = 0;
-                    Transition.start(() => this.changeState('LEVEL1'));
+                    this.stageIndex = 0;
+                    Transition.start(() => this.changeState('LEVEL'));
                 } else if (Input.wantStart()) {
                     AutoPlay.setEnabled(false, false);
                     Transition.start(() => this.changeState('PROLOGUE'));
@@ -3281,6 +3510,7 @@ const Game = {
                 this.updatePrologue();
                 break;
 
+            case 'LEVEL':
             case 'LEVEL1':
             case 'LEVEL2':
             case 'BOSS':
@@ -3293,7 +3523,8 @@ const Game = {
                 // 掛機模式：通關／死亡後自動循環再開
                 if (AutoPlay.enabled && this.resultTimer > 100) {
                     if (this.state === 'VICTORY') AutoPlay.loopCount++;
-                    Transition.start(() => this.changeState('LEVEL1'));
+                    this.stageIndex = 0;
+                    Transition.start(() => this.changeState('LEVEL'));
                 } else if (this.resultTimer > 60 && Input.wantStart()) {
                     AutoPlay.setEnabled(false, false);
                     Transition.start(() => this.changeState('TITLE'));
@@ -3301,7 +3532,8 @@ const Game = {
                     // 結算畫面也可直接掛機再戰
                     AutoPlay.setEnabled(true, true);
                     if (this.state === 'VICTORY') AutoPlay.loopCount++;
-                    Transition.start(() => this.changeState('LEVEL1'));
+                    this.stageIndex = 0;
+                    Transition.start(() => this.changeState('LEVEL'));
                 }
                 break;
         }
@@ -3320,7 +3552,8 @@ const Game = {
                 this.prologueCharIdx = 0;
                 if (this.prologueStep >= this.prologueTexts.length) {
                     this.prologueStep = this.prologueTexts.length - 1;
-                    Transition.start(() => this.changeState('LEVEL1'));
+                    this.stageIndex = 0;
+                    Transition.start(() => this.changeState('LEVEL'));
                 }
             }
         }
@@ -3372,7 +3605,9 @@ const Game = {
         this.level.hearts = this.level.hearts.filter(h => !h.dead);
 
         // Boss
-        if (this.level.boss) {
+        if (this.level.isFinalBoss) {
+            drawBackground('world8', Camera.x);
+        } else if (this.level.boss) {
             this.level.boss.update(this.level, this.player);
         }
 
@@ -3380,17 +3615,18 @@ const Game = {
         Camera.update(this.player, this.level.w);
 
         // Win conditions
-        if (this.state !== 'BOSS' && this.player.x > this.level.w - 100) {
-            if (this.levelNum === 1) {
-                SFX.levelUp();
-                Transition.start(() => this.changeState('LEVEL2'));
-            } else if (this.levelNum === 2) {
-                SFX.levelUp();
-                Transition.start(() => this.changeState('BOSS'));
-            }
+        if (this.state === 'LEVEL' && !this.level.boss && this.player.x > this.level.w - 100) {
+            SFX.levelUp();
+            this.stageIndex++;
+            Transition.start(() => this.changeState('LEVEL'));
         }
         if (this.level.boss && this.level.boss.dead && this.level.boss.deathTimer > 120) {
-            Transition.start(() => this.changeState('VICTORY'));
+            if (this.state === 'LEVEL' && this.stageIndex < 31) {
+                this.stageIndex++;
+                Transition.start(() => this.changeState('LEVEL'));
+            } else {
+                Transition.start(() => this.changeState('VICTORY'));
+            }
         }
 
         // Lose condition
@@ -3417,6 +3653,7 @@ const Game = {
                 this.drawPrologue();
                 break;
 
+            case 'LEVEL':
             case 'LEVEL1':
             case 'LEVEL2':
             case 'BOSS':
@@ -3563,23 +3800,23 @@ const Game = {
 
     drawGameplay() {
         // Background
-        if (this.state === 'BOSS') {
+        if (this.level.boss) {
             drawBossBackground();
         } else {
-            const bgKey = this.levelNum === 1 ? 'forest' : 'castle';
+            const bgKey = this.level.bg || 'world1';
             drawBackground(bgKey, Camera.x);
         }
 
         Camera.apply(ctx);
 
         // Platforms
-        const levelType = this.levelNum === 1 ? 'forest' : this.levelNum === 2 ? 'castle' : 'boss';
+        const levelType = this.level.boss ? 'boss' : (this.level.bg || 'forest');
         for (const p of this.level.platforms) {
             drawPlatform(p, levelType);
         }
 
         // Level end marker (for non-boss levels)
-        if (this.state !== 'BOSS') {
+        if (!this.level.boss) {
             const flagX = this.level.w - 60;
             ctx.fillStyle = '#a00';
             ctx.fillRect(flagX, this.level.groundY - 60, 4, 60);

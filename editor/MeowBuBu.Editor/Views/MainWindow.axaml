@@ -1,0 +1,310 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:MeowBuBu.Editor.ViewModels"
+        xmlns:ctrl="using:MeowBuBu.Editor.Controls"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="800"
+        x:Class="MeowBuBu.Editor.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Width="1360" Height="860"
+        MinWidth="1000" MinHeight="640"
+        Title="喵布布編輯器 — 關卡 / 地圖 / 戰役 / 場景"
+        RequestedThemeVariant="Dark">
+
+    <Design.DataContext>
+        <vm:MainViewModel />
+    </Design.DataContext>
+
+    <DockPanel>
+        <!-- 選單 -->
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="檔案(_F)">
+                <MenuItem Header="開啟關卡…" Command="{Binding OpenLevelCommand}" />
+                <MenuItem Header="儲存關卡" Command="{Binding SaveLevelCommand}" />
+                <MenuItem Header="關卡另存…" Command="{Binding SaveLevelAsCommand}" />
+                <Separator />
+                <MenuItem Header="開啟戰役…" Command="{Binding OpenCampaignCommand}" />
+                <MenuItem Header="儲存戰役" Command="{Binding SaveCampaignCommand}" />
+                <MenuItem Header="戰役另存…" Command="{Binding SaveCampaignAsCommand}" />
+                <Separator />
+                <MenuItem Header="開啟場景…" Command="{Binding OpenSceneCommand}" />
+                <MenuItem Header="儲存場景" Command="{Binding SaveSceneCommand}" />
+                <MenuItem Header="場景另存…" Command="{Binding SaveSceneAsCommand}" />
+                <Separator />
+                <MenuItem Header="從 data/ 載入" Command="{Binding LoadAllFromGameDataCommand}" />
+                <MenuItem Header="匯出到 data/（遊戲用）" Command="{Binding ExportAllToGameDataCommand}" />
+            </MenuItem>
+            <MenuItem Header="關卡範本(_T)">
+                <MenuItem Header="森林 (level1)"
+                          Command="{Binding LevelEditor.NewLevelTemplateCommand}"
+                          CommandParameter="forest" />
+                <MenuItem Header="城堡 (level2)"
+                          Command="{Binding LevelEditor.NewLevelTemplateCommand}"
+                          CommandParameter="castle" />
+                <MenuItem Header="Boss 戰"
+                          Command="{Binding LevelEditor.NewLevelTemplateCommand}"
+                          CommandParameter="boss" />
+                <MenuItem Header="空白關卡"
+                          Command="{Binding LevelEditor.NewLevelTemplateCommand}"
+                          CommandParameter="blank" />
+            </MenuItem>
+            <MenuItem Header="說明(_H)">
+                <MenuItem Header="快捷鍵"
+                          Command="{Binding}"
+                          IsEnabled="False" />
+                <MenuItem Header="1 選取  2 平台  3 敵人  4 魚  5 愛心  6 Boss  7 出生點  0 橡皮擦" IsEnabled="False" />
+                <MenuItem Header="滾輪縮放 · 中鍵平移 · Delete 刪除 · G 網格 · Ctrl+F 重設視圖" IsEnabled="False" />
+            </MenuItem>
+        </Menu>
+
+        <!-- 狀態列 -->
+        <Border DockPanel.Dock="Bottom" Background="#14141c" Padding="10,6" BorderBrush="#333" BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="{Binding StatusMessage}" Foreground="#ccc" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding GameRootDisplay}" Foreground="#888" FontSize="11"
+                           VerticalAlignment="Center" Margin="16,0,0,0" />
+            </Grid>
+        </Border>
+
+        <TabControl SelectedIndex="{Binding SelectedTab}" Margin="0">
+            <!-- ════ 關卡 / 地圖 ════ -->
+            <TabItem Header="🗺️ 關卡／地圖編輯器">
+                <Grid ColumnDefinitions="220,*,260" Margin="8">
+                    <!-- 左：工具 -->
+                    <Border Grid.Column="0" Background="#1e1e28" CornerRadius="6" Padding="10" Margin="0,0,8,0">
+                        <ScrollViewer>
+                            <StackPanel Spacing="8" DataContext="{Binding LevelEditor}">
+                                <TextBlock Text="工具" FontWeight="Bold" FontSize="14" />
+                                <Button Content="🔍 選取 (1)" Command="{Binding SetToolCommand}" CommandParameter="Select" HorizontalAlignment="Stretch" />
+                                <Button Content="🟫 單向平台 (2)" Command="{Binding SetToolCommand}" CommandParameter="Platform" HorizontalAlignment="Stretch" />
+                                <Button Content="⬛ 實心地面" Command="{Binding SetToolCommand}" CommandParameter="SolidGround" HorizontalAlignment="Stretch" />
+                                <Button Content="🐱 敵人 (3)" Command="{Binding SetToolCommand}" CommandParameter="Enemy" HorizontalAlignment="Stretch" />
+                                <Button Content="🐟 魚 (4)" Command="{Binding SetToolCommand}" CommandParameter="Fish" HorizontalAlignment="Stretch" />
+                                <Button Content="❤️ 愛心 (5)" Command="{Binding SetToolCommand}" CommandParameter="Heart" HorizontalAlignment="Stretch" />
+                                <Button Content="👹 Boss (6)" Command="{Binding SetToolCommand}" CommandParameter="Boss" HorizontalAlignment="Stretch" />
+                                <Button Content="📍 出生點 (7)" Command="{Binding SetToolCommand}" CommandParameter="PlayerSpawn" HorizontalAlignment="Stretch" />
+                                <Button Content="🗑️ 橡皮擦 (0)" Command="{Binding SetToolCommand}" CommandParameter="Erase" HorizontalAlignment="Stretch" />
+
+                                <Separator Margin="0,6" />
+                                <TextBlock Text="筆刷尺寸" FontWeight="SemiBold" />
+                                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
+                                    <TextBlock Text="寬" VerticalAlignment="Center" Margin="0,0,6,4" />
+                                    <NumericUpDown Grid.Column="1" Value="{Binding BrushWidth}" Minimum="20" Maximum="800" Increment="10" Margin="0,0,0,4" />
+                                    <TextBlock Grid.Row="1" Text="高" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                    <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding BrushHeight}" Minimum="4" Maximum="200" Increment="2" />
+                                </Grid>
+                                <TextBlock Text="愛心回復量" FontWeight="SemiBold" Margin="0,4,0,0" />
+                                <NumericUpDown Value="{Binding HeartHeal}" Minimum="1" Maximum="2" Increment="1" />
+
+                                <Separator Margin="0,6" />
+                                <TextBlock Text="檢視" FontWeight="SemiBold" />
+                                <CheckBox Content="顯示網格 (G)" IsChecked="{Binding ShowGrid}" />
+                                <CheckBox Content="吸附網格" IsChecked="{Binding SnapToGrid}" />
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <TextBlock Text="格距" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                    <NumericUpDown Grid.Column="1" Value="{Binding GridSize}" Minimum="5" Maximum="50" Increment="5" />
+                                </Grid>
+                                <Button Content="重設視圖 (Ctrl+F)" Command="{Binding ResetViewCommand}" HorizontalAlignment="Stretch" />
+                                <Button Content="同步地面平台" Command="{Binding EnsureGroundCommand}" HorizontalAlignment="Stretch" />
+
+                                <Separator Margin="0,6" />
+                                <TextBlock Text="統計" FontWeight="SemiBold" Foreground="#aaa" />
+                                <TextBlock Text="{Binding PlatformCount, StringFormat=平台: {0}}" Foreground="#8c8" />
+                                <TextBlock Text="{Binding EnemyCount, StringFormat=敵人: {0}}" Foreground="#e86" />
+                                <TextBlock Text="{Binding FishCount, StringFormat=魚: {0}}" Foreground="#6af" />
+                                <TextBlock Text="{Binding HeartCount, StringFormat=愛心: {0}}" Foreground="#f66" />
+                                <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Foreground="#888" FontSize="11" Margin="0,8,0,0" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+
+                    <!-- 中：畫布 -->
+                    <Border Grid.Column="1" Background="#121218" CornerRadius="6" ClipToBounds="True">
+                        <ctrl:LevelCanvas Editor="{Binding LevelEditor}" />
+                    </Border>
+
+                    <!-- 右：屬性 -->
+                    <Border Grid.Column="2" Background="#1e1e28" CornerRadius="6" Padding="10" Margin="8,0,0,0">
+                        <ScrollViewer>
+                            <StackPanel Spacing="8" DataContext="{Binding LevelEditor}">
+                                <TextBlock Text="關卡屬性" FontWeight="Bold" FontSize="14" />
+                                <TextBlock Text="ID" FontSize="11" Foreground="#aaa" />
+                                <TextBox Text="{Binding Level.Id}" />
+                                <TextBlock Text="名稱" FontSize="11" Foreground="#aaa" />
+                                <TextBox Text="{Binding Level.Name}" />
+                                <TextBlock Text="寬度 (px)" FontSize="11" Foreground="#aaa" />
+                                <NumericUpDown Value="{Binding Level.Width}" Minimum="960" Maximum="20000" Increment="100" />
+                                <TextBlock Text="地面 Y" FontSize="11" Foreground="#aaa" />
+                                <NumericUpDown Value="{Binding Level.GroundY}" Minimum="200" Maximum="540" Increment="10" />
+                                <TextBlock Text="背景" FontSize="11" Foreground="#aaa" />
+                                <ComboBox ItemsSource="{Binding BgOptions}" SelectedItem="{Binding Level.Bg}" HorizontalAlignment="Stretch" />
+                                <TextBlock Text="難度" FontSize="11" Foreground="#aaa" />
+                                <ComboBox ItemsSource="{Binding DifficultyOptions}" SelectedItem="{Binding Level.Difficulty}" HorizontalAlignment="Stretch" />
+                                <TextBlock Text="類型" FontSize="11" Foreground="#aaa" />
+                                <ComboBox ItemsSource="{Binding TypeOptions}" SelectedItem="{Binding Level.Type}" HorizontalAlignment="Stretch" />
+
+                                <Separator Margin="0,8" />
+                                <TextBlock Text="選取物件" FontWeight="Bold" FontSize="14" />
+                                <TextBlock Text="{Binding SelectedKind, StringFormat=類型: {0}}" Foreground="#ccc" />
+
+                                <StackPanel IsVisible="{Binding HasSelection}" Spacing="6">
+                                    <TextBlock Text="X" FontSize="11" Foreground="#aaa" />
+                                    <NumericUpDown Value="{Binding PropX}" Increment="1" />
+                                    <TextBlock Text="Y" FontSize="11" Foreground="#aaa" />
+                                    <NumericUpDown Value="{Binding PropY}" Increment="1" />
+
+                                    <StackPanel IsVisible="{Binding IsPlatformSelected}" Spacing="6">
+                                        <TextBlock Text="寬度 W" FontSize="11" Foreground="#aaa" />
+                                        <NumericUpDown Value="{Binding PropW}" Minimum="8" Increment="1" />
+                                        <TextBlock Text="高度 H" FontSize="11" Foreground="#aaa" />
+                                        <NumericUpDown Value="{Binding PropH}" Minimum="4" Increment="1" />
+                                        <CheckBox Content="單向平台 (oneWay)" IsChecked="{Binding PropOneWay}" />
+                                    </StackPanel>
+
+                                    <StackPanel IsVisible="{Binding IsHeartSelected}" Spacing="6">
+                                        <TextBlock Text="回復量 Heal" FontSize="11" Foreground="#aaa" />
+                                        <NumericUpDown Value="{Binding PropHeal}" Minimum="1" Maximum="2" Increment="1" />
+                                    </StackPanel>
+
+                                    <Button Content="刪除選取 (Delete)" Command="{Binding DeleteSelectedCommand}"
+                                            HorizontalAlignment="Stretch" Classes="danger" Margin="0,8,0,0" />
+                                </StackPanel>
+
+                                <TextBlock Text="未選取物件 — 用「選取」工具點擊畫布"
+                                           IsVisible="{Binding !HasSelection}"
+                                           TextWrapping="Wrap" Foreground="#666" FontSize="12" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- ════ 戰役 ════ -->
+            <TabItem Header="📜 戰役編輯器">
+                <Grid ColumnDefinitions="*,320" Margin="12" DataContext="{Binding CampaignEditor}">
+                    <Border Background="#1e1e28" CornerRadius="6" Padding="16" Margin="0,0,8,0">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,12">
+                                <TextBlock Text="戰役設定" FontWeight="Bold" FontSize="16" />
+                                <TextBlock Text="戰役名稱" FontSize="11" Foreground="#aaa" />
+                                <TextBox Text="{Binding Campaign.Name}" />
+                                <TextBlock Text="序章場景 ID" FontSize="11" Foreground="#aaa" />
+                                <TextBox Text="{Binding Campaign.Prologue}" PlaceholderText="prologue" />
+                                <TextBlock Text="關卡順序（上到下 = 遊戲進程）" FontWeight="SemiBold" Margin="0,8,0,0" />
+                            </StackPanel>
+
+                            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
+                                <Button Content="▲ 上移" Command="{Binding MoveUpCommand}" />
+                                <Button Content="▼ 下移" Command="{Binding MoveDownCommand}" />
+                                <Button Content="移除" Command="{Binding RemoveStageCommand}" />
+                                <Button Content="還原預設" Command="{Binding ResetDefaultCommand}" Margin="16,0,0,0" />
+                            </StackPanel>
+
+                            <ListBox ItemsSource="{Binding Campaign.Stages}"
+                                     SelectedItem="{Binding SelectedStage}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid ColumnDefinitions="Auto,*,Auto" Margin="4">
+                                            <Border Background="#3a5a8a" CornerRadius="4" Padding="8,4" Margin="0,0,10,0">
+                                                <TextBlock Text="{Binding State}" FontFamily="Consolas" FontSize="12" />
+                                            </Border>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Text="{Binding Label}" FontWeight="SemiBold" />
+                                                <TextBlock Text="{Binding LevelId, StringFormat=level: {0}}" Foreground="#888" FontSize="11" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </DockPanel>
+                    </Border>
+
+                    <Border Grid.Column="1" Background="#1e1e28" CornerRadius="6" Padding="16">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="新增關卡節點" FontWeight="Bold" FontSize="14" />
+                            <TextBlock Text="顯示名稱" FontSize="11" Foreground="#aaa" />
+                            <TextBox Text="{Binding NewLabel}" />
+                            <TextBlock Text="Level ID（對應 levels/*.json）" FontSize="11" Foreground="#aaa" />
+                            <TextBox Text="{Binding NewLevelId}" />
+                            <TextBlock Text="遊戲 State 名稱" FontSize="11" Foreground="#aaa" />
+                            <TextBox Text="{Binding NewState}" />
+                            <Button Content="＋ 新增到戰役" Command="{Binding AddStageCommand}"
+                                    HorizontalAlignment="Stretch" Margin="0,8,0,0" />
+
+                            <Separator Margin="0,12" />
+                            <TextBlock Text="選取節點屬性" FontWeight="Bold" />
+                            <StackPanel IsVisible="{Binding SelectedStage, Converter={x:Static ObjectConverters.IsNotNull}}" Spacing="6">
+                                <TextBlock Text="Label" FontSize="11" Foreground="#aaa" />
+                                <TextBox Text="{Binding SelectedStage.Label}" />
+                                <TextBlock Text="LevelId" FontSize="11" Foreground="#aaa" />
+                                <TextBox Text="{Binding SelectedStage.LevelId}" />
+                                <TextBlock Text="State" FontSize="11" Foreground="#aaa" />
+                                <TextBox Text="{Binding SelectedStage.State}" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding StatusText}" Foreground="#888" FontSize="11" Margin="0,12,0,0" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- ════ 場景 ════ -->
+            <TabItem Header="🎬 場景／序章編輯器">
+                <Grid ColumnDefinitions="*,360" Margin="12" DataContext="{Binding SceneEditor}">
+                    <Border Background="#1e1e28" CornerRadius="6" Padding="16" Margin="0,0,8,0">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,12">
+                                <TextBlock Text="場景設定" FontWeight="Bold" FontSize="16" />
+                                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto,Auto">
+                                    <TextBlock Text="場景 ID" FontSize="11" Foreground="#aaa" />
+                                    <TextBlock Grid.Column="1" Text="名稱" FontSize="11" Foreground="#aaa" />
+                                    <TextBox Grid.Row="1" Text="{Binding Scene.Id}" Margin="0,0,8,8" />
+                                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Scene.Name}" Margin="0,0,0,8" />
+                                    <TextBlock Grid.Row="2" Text="背景 key" FontSize="11" Foreground="#aaa" />
+                                    <ComboBox Grid.Row="3" ItemsSource="{Binding BgOptions}"
+                                              SelectedItem="{Binding Scene.Bg}" HorizontalAlignment="Stretch" />
+                                </Grid>
+                                <TextBlock Text="對白列表（依序播放）" FontWeight="SemiBold" Margin="0,8,0,0" />
+                            </StackPanel>
+
+                            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
+                                <Button Content="▲" Command="{Binding MoveUpCommand}" />
+                                <Button Content="▼" Command="{Binding MoveDownCommand}" />
+                                <Button Content="刪除" Command="{Binding RemoveTextCommand}" />
+                                <Button Content="還原預設序章" Command="{Binding ResetDefaultCommand}" Margin="16,0,0,0" />
+                            </StackPanel>
+
+                            <ListBox ItemsSource="{Binding Scene.Texts}"
+                                     SelectedItem="{Binding SelectedText}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="4" />
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </DockPanel>
+                    </Border>
+
+                    <Border Grid.Column="1" Background="#1e1e28" CornerRadius="6" Padding="16">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="編輯對白" FontWeight="Bold" FontSize="14" />
+                            <TextBox Text="{Binding EditText}" AcceptsReturn="True" TextWrapping="Wrap"
+                                     Height="120" PlaceholderText="輸入對白文字…" />
+                            <Button Content="更新選取對白" Command="{Binding UpdateTextCommand}" HorizontalAlignment="Stretch" />
+                            <Button Content="新增為新對白" Command="{Binding AddTextCommand}" HorizontalAlignment="Stretch" />
+
+                            <Separator Margin="0,12" />
+                            <TextBlock Text="預覽" FontWeight="SemiBold" />
+                            <Border Background="#0a0a12" CornerRadius="4" Padding="12" MinHeight="100">
+                                <TextBlock Text="{Binding EditText}" TextWrapping="Wrap" FontSize="16"
+                                           Foreground="#ffe066" />
+                            </Border>
+                            <TextBlock Text="{Binding StatusText}" Foreground="#888" FontSize="11" Margin="0,8,0,0" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>
